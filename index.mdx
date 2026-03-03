@@ -1,97 +1,139 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: FastMCP Documentation
+description: A TypeScript framework for building MCP servers with authentication, sessions, and multi-transport support
 ---
 
-## Setting up
+# FastMCP
 
-Get your documentation site up and running in minutes.
+A TypeScript framework for building [MCP (Model Context Protocol)](https://modelcontextprotocol.io) servers capable of handling client sessions.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+<Note>
+  For a Python implementation, see [FastMCP for Python](https://github.com/jlowin/fastmcp).
+</Note>
 
-## Make it yours
+## Get Started
 
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install FastMCP and get your environment ready
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build your first MCP server in minutes
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Core Concepts" icon="book" href="/core/tools">
+    Learn about tools, resources, and prompts
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="API Reference" icon="code" href="/api/fastmcp">
+    Explore the complete API documentation
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Key Features
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Simple Definitions" icon="wrench">
+    Define tools, resources, and prompts with minimal boilerplate
+  </Card>
+  <Card title="Type-Safe Schemas" icon="shield-check">
+    Use Zod, Valibot, or ArkType for parameter validation
+  </Card>
+  <Card title="Built-in Authentication" icon="lock">
+    OAuth 2.1 with Google, GitHub, Azure, and custom providers
+  </Card>
+  <Card title="Session Management" icon="users">
+    Track sessions with IDs and maintain client state
+  </Card>
+  <Card title="Rich Content" icon="image">
+    Return images, audio, and embedded resources
+  </Card>
+  <Card title="Multiple Transports" icon="network-wired">
+    stdio, HTTP streaming, SSE, and edge runtime support
+  </Card>
+  <Card title="Streaming Output" icon="stream">
+    Stream partial results and report progress
+  </Card>
+  <Card title="Custom Routes" icon="route">
+    Add REST APIs, webhooks, and admin interfaces
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Why FastMCP?
 
-## Need inspiration?
+FastMCP is built on top of the official MCP SDK, providing an opinionated framework that eliminates boilerplate and handles common patterns automatically.
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+**When to use FastMCP:** You want to build MCP servers quickly without dealing with low-level implementation details.
+
+**When to use the official SDK:** You need maximum control or have specific architectural requirements.
+
+## Quick Example
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "add",
+  description: "Add two numbers",
+  parameters: z.object({
+    a: z.number(),
+    b: z.number(),
+  }),
+  execute: async (args) => {
+    return String(args.a + args.b);
+  },
+});
+
+server.start({
+  transportType: "stdio",
+});
+```
+
+## Popular Use Cases
+
+<CardGroup cols={2}>
+  <Card title="API Integration" icon="plug">
+    Connect LLMs to external APIs and services
+  </Card>
+  <Card title="Data Access" icon="database">
+    Provide structured access to databases and files
+  </Card>
+  <Card title="Automation" icon="gears">
+    Build tools for workflow automation
+  </Card>
+  <Card title="Edge Deployment" icon="cloud">
+    Deploy to Cloudflare Workers or serverless platforms
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Steps>
+  <Step title="Install FastMCP">
+    Get started by installing the package in your project.
+    
+    [Installation Guide →](/installation)
+  </Step>
+  
+  <Step title="Build Your First Server">
+    Follow the quickstart to create a working MCP server.
+    
+    [Quickstart →](/quickstart)
+  </Step>
+  
+  <Step title="Learn Core Concepts">
+    Understand tools, resources, prompts, and sessions.
+    
+    [Core Concepts →](/core/tools)
+  </Step>
+  
+  <Step title="Deploy to Production">
+    Learn about deployment options and best practices.
+    
+    [Deployment →](/deployment/production)
+  </Step>
+</Steps>

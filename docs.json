@@ -26,7 +26,7 @@
           {
             "group": "Get Started",
             "pages": [
-              "introduction",
+              "index",
               "installation",
               "quickstart"
             ]
@@ -115,7 +115,8 @@
             "pages": [
               "cli/overview",
               "cli/dev",
-              "cli/inspect"
+              "cli/inspect",
+              "cli/validate"
             ]
           }
         ]

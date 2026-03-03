@@ -1,0 +1,235 @@
+---
+title: fastmcp validate
+description: Validate your FastMCP server file for syntax and structure
+---
+
+The `fastmcp validate` command checks your server file for TypeScript compilation errors and validates that the FastMCP server is properly structured.
+
+## Usage
+
+```bash
+npx fastmcp validate <file> [options]
+```
+
+## Arguments
+
+<ParamField path="file" type="string" required>
+  Path to your FastMCP server file (TypeScript or JavaScript)
+</ParamField>
+
+## Options
+
+<ParamField path="--strict" type="boolean">
+  Enable strict TypeScript validation with type checking
+  
+  **Alias:** `-s`
+  
+  **Default:** `false`
+</ParamField>
+
+## What it validates
+
+The validate command performs two types of checks:
+
+<Steps>
+  <Step title="TypeScript compilation">
+    Ensures your server file compiles without TypeScript errors.
+    
+    With `--strict` flag, this uses TypeScript's strict mode for more thorough type checking.
+  </Step>
+
+  <Step title="Server structure">
+    Verifies that your file:
+    - Properly imports FastMCP
+    - Creates a valid FastMCP instance
+    - Exports or starts the server correctly
+  </Step>
+</Steps>
+
+## Examples
+
+### Basic validation
+
+Check if your server file is valid:
+
+```bash
+npx fastmcp validate src/server.ts
+```
+
+**Output on success:**
+```
+[FastMCP] Validating server file: /path/to/src/server.ts
+[FastMCP] ✓ TypeScript compilation successful
+[FastMCP] ✓ Server structure validation passed
+[FastMCP] ✓ All validations passed! Server file looks good.
+```
+
+### Strict validation
+
+Enable strict TypeScript checking for more thorough validation:
+
+```bash
+npx fastmcp validate src/server.ts --strict
+```
+
+This is useful when you want to catch potential type issues before deployment.
+
+### Validation in CI/CD
+
+Use validate in your continuous integration pipeline:
+
+<CodeGroup>
+
+```yaml GitHub Actions
+name: Validate MCP Server
+on: [push, pull_request]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - run: npm install
+      - run: npx fastmcp validate src/server.ts --strict
+```
+
+```yaml GitLab CI
+validate-server:
+  image: node:20
+  script:
+    - npm install
+    - npx fastmcp validate src/server.ts --strict
+```
+
+</CodeGroup>
+
+## Common errors
+
+<Accordion title="File not found">
+  **Error:** `[FastMCP Error] File not found: /path/to/file.ts`
+  
+  **Solution:** Verify the file path is correct and the file exists.
+  
+  ```bash
+  # Use absolute or relative path
+  npx fastmcp validate ./src/server.ts
+  ```
+</Accordion>
+
+<Accordion title="TypeScript compilation failed">
+  **Error:** `[FastMCP] ✗ TypeScript compilation failed`
+  
+  **Solution:** Fix the TypeScript errors shown in the output. Common issues:
+  - Missing type imports
+  - Incorrect type annotations
+  - Syntax errors
+  
+  Run with `--strict` to see all type issues:
+  ```bash
+  npx fastmcp validate src/server.ts --strict
+  ```
+</Accordion>
+
+<Accordion title="Server structure validation failed">
+  **Error:** `[FastMCP] ✗ Server structure validation failed`
+  
+  **Solution:** Ensure your file:
+  1. Imports FastMCP: `import { FastMCP } from "fastmcp"`
+  2. Creates an instance: `const server = new FastMCP({ ... })`
+  3. Either exports the server or calls `server.start()`
+  
+  **Example valid structure:**
+  ```typescript
+  import { FastMCP } from "fastmcp";
+  
+  const server = new FastMCP({
+    name: "My Server",
+    version: "1.0.0",
+  });
+  
+  // Add tools, resources, prompts...
+  
+  server.start({ transportType: "stdio" });
+  ```
+</Accordion>
+
+## Validation vs. Testing
+
+The `validate` command checks for **structural and type correctness** but does not:
+- Test tool functionality
+- Verify runtime behavior
+- Check for logical errors
+
+For runtime testing, use the [`dev` command](/cli/dev) or [`inspect` command](/cli/inspect).
+
+## Exit codes
+
+The validate command uses standard exit codes:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| `0` | Validation passed successfully |
+| `1` | Validation failed or encountered an error |
+
+This makes it easy to use in scripts and CI/CD pipelines:
+
+```bash
+#!/bin/bash
+if npx fastmcp validate src/server.ts; then
+  echo "✓ Server is valid"
+  npm run deploy
+else
+  echo "✗ Server validation failed"
+  exit 1
+fi
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Validate before committing">
+    Add validation to your pre-commit hooks:
+    
+    ```json
+    {
+      "husky": {
+        "hooks": {
+          "pre-commit": "npx fastmcp validate src/server.ts"
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Use strict mode in CI">
+    Enable strict validation in your CI/CD pipeline for maximum type safety:
+    
+    ```bash
+    npx fastmcp validate src/server.ts --strict
+    ```
+  </Step>
+
+  <Step title="Validate all server files">
+    If you have multiple server files, validate them all:
+    
+    ```bash
+    npx fastmcp validate src/server1.ts && \
+    npx fastmcp validate src/server2.ts && \
+    npx fastmcp validate src/server3.ts
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Test with dev" icon="terminal" href="/cli/dev">
+    Run your server and test it interactively
+  </Card>
+  <Card title="Debug with inspect" icon="magnifying-glass" href="/cli/inspect">
+    Use visual debugging with MCP Inspector
+  </Card>
+</CardGroup>
