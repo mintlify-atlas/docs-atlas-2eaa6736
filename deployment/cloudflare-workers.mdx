@@ -1,0 +1,323 @@
+---
+title: Cloudflare Workers Deployment
+description: Deploy FastMCP to Cloudflare Workers for global edge distribution
+---
+
+Deploy your FastMCP server to Cloudflare Workers for ultra-low latency worldwide. The edge runtime allows your MCP server to run close to your users with automatic global distribution.
+
+## EdgeFastMCP vs FastMCP
+
+Cloudflare Workers requires the edge-compatible `EdgeFastMCP` class:
+
+| Feature              | FastMCP                        | EdgeFastMCP                            |
+| -------------------- | ------------------------------ | -------------------------------------- |
+| Runtime              | Node.js                        | Edge (V8 isolates)                     |
+| Start method         | `server.start({ port })`       | `export default server`                |
+| Transport            | stdio, httpStream, SSE         | HTTP Streamable only                   |
+| Sessions             | Stateful or stateless          | Stateless only                         |
+| File system          | Yes                            | No                                     |
+| OAuth/Authentication | Built-in `authenticate` option | Use Hono middleware (built-in planned) |
+| Custom routes        | `server.getApp()`              | `server.getApp()`                      |
+
+<Note>
+EdgeFastMCP is optimized for **stateless** edge environments with **no filesystem access**. Use `fetch` APIs for external data.
+</Note>
+
+## Step-by-Step Deployment
+
+<Steps>
+  <Step title="Install Dependencies">
+    Install FastMCP and Zod in your Cloudflare Workers project:
+
+    ```bash
+    npm install fastmcp zod
+    ```
+  </Step>
+
+  <Step title="Create Your MCP Server">
+    Create `src/index.ts` with the `EdgeFastMCP` import:
+
+    ```typescript src/index.ts
+    import { EdgeFastMCP } from "fastmcp/edge";
+    import { z } from "zod";
+
+    const server = new EdgeFastMCP({
+      name: "My Edge Server",
+      version: "1.0.0",
+      description: "MCP server running on Cloudflare Workers",
+    });
+
+    // Add tools, resources, prompts as usual
+    server.addTool({
+      name: "greet",
+      description: "Greet someone",
+      parameters: z.object({
+        name: z.string(),
+      }),
+      execute: async ({ name }) => {
+        return `Hello, ${name}! Served from the edge.`;
+      },
+    });
+
+    // Export the server as default (required for Cloudflare Workers)
+    export default server;
+    ```
+
+    <Note>
+    The `export default server` statement is **required** for Cloudflare Workers to recognize your handler.
+    </Note>
+  </Step>
+
+  <Step title="Configure wrangler.toml">
+    Create a `wrangler.toml` configuration file:
+
+    ```toml wrangler.toml
+    name = "my-mcp-server"
+    main = "src/index.ts"
+    compatibility_date = "2024-01-01"
+    ```
+
+    <CodeGroup>
+    ```toml Basic Configuration
+    name = "my-mcp-server"
+    main = "src/index.ts"
+    compatibility_date = "2024-01-01"
+    ```
+
+    ```toml With Environment Variables
+    name = "my-mcp-server"
+    main = "src/index.ts"
+    compatibility_date = "2024-01-01"
+
+    [vars]
+    ENVIRONMENT = "production"
+
+    # For secrets, use: wrangler secret put API_KEY
+    ```
+
+    ```toml With Custom Domain
+    name = "my-mcp-server"
+    main = "src/index.ts"
+    compatibility_date = "2024-01-01"
+
+    routes = [
+      { pattern = "mcp.example.com", custom_domain = true }
+    ]
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Deploy to Cloudflare">
+    Deploy your MCP server with a single command:
+
+    ```bash
+    npx wrangler deploy
+    ```
+
+    Your server will be available at:
+    - MCP endpoint: `https://my-mcp-server.workers.dev/mcp`
+    - Health check: `https://my-mcp-server.workers.dev/health`
+  </Step>
+</Steps>
+
+## Complete Example
+
+Here's a full example based on `src/examples/edge-cloudflare-worker.ts`:
+
+```typescript src/index.ts
+import { EdgeFastMCP } from "fastmcp/edge";
+import { z } from "zod";
+
+const server = new EdgeFastMCP({
+  description: "An MCP server running on Cloudflare Workers",
+  name: "CloudflareWorkerMCP",
+  version: "1.0.0",
+});
+
+// Simple tool
+server.addTool({
+  name: "greet",
+  description: "Greet someone by name",
+  parameters: z.object({
+    name: z.string().describe("The name to greet"),
+  }),
+  execute: async ({ name }) => {
+    return `Hello, ${name}! This response is from a Cloudflare Worker.`;
+  },
+});
+
+// Tool with structured content
+server.addTool({
+  name: "get_weather",
+  description: "Get weather information for a location",
+  parameters: z.object({
+    location: z.string().describe("The city or location"),
+  }),
+  execute: async ({ location }) => {
+    // Call external API using fetch
+    return {
+      content: [
+        {
+          type: "text",
+          text: `Weather for ${location}:\n- Temperature: 72°F\n- Conditions: Sunny\n- Humidity: 45%`,
+        },
+      ],
+    };
+  },
+});
+
+// Static resource
+server.addResource({
+  uri: "info://server",
+  name: "Server Info",
+  description: "Information about this MCP server",
+  mimeType: "text/plain",
+  load: async () => {
+    return "This is a FastMCP server running on Cloudflare Workers edge runtime.";
+  },
+});
+
+// Prompt template
+server.addPrompt({
+  name: "analyze_code",
+  description: "Generate a prompt to analyze code",
+  arguments: [
+    { name: "language", description: "Programming language", required: true },
+    { name: "focus", description: "What to focus on (optional)", required: false },
+  ],
+  load: async (args) => {
+    const focus = args.focus ? ` focusing on ${args.focus}` : "";
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `Please analyze the following ${args.language} code${focus}:`,
+          },
+        },
+      ],
+    };
+  },
+});
+
+export default server;
+```
+
+## Adding Custom Routes
+
+Access the underlying Hono app to add custom HTTP endpoints:
+
+```typescript
+const app = server.getApp();
+
+// Add a landing page
+app.get("/", (c) => c.html("<h1>Welcome to my MCP server</h1>"));
+
+// Add REST API endpoints
+app.get("/api/status", (c) => c.json({ status: "ok", edge: true }));
+
+// Handle POST requests
+app.post("/api/data", async (c) => {
+  const body = await c.req.json();
+  return c.json({ received: body });
+});
+
+export default server;
+```
+
+## Environment Variables and Secrets
+
+<Steps>
+  <Step title="Add Environment Variables">
+    Define variables in `wrangler.toml`:
+
+    ```toml
+    [vars]
+    API_ENDPOINT = "https://api.example.com"
+    CACHE_TTL = "3600"
+    ```
+  </Step>
+
+  <Step title="Add Secrets">
+    Use wrangler CLI for sensitive data:
+
+    ```bash
+    npx wrangler secret put API_KEY
+    npx wrangler secret put DATABASE_URL
+    ```
+  </Step>
+
+  <Step title="Access in Code">
+    TypeScript doesn't have direct access to `env` in EdgeFastMCP. Use Hono middleware:
+
+    ```typescript
+    const app = server.getApp();
+
+    app.use("*", async (c, next) => {
+      // Access environment variables
+      const apiKey = c.env.API_KEY;
+      await next();
+    });
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+Never commit secrets to `wrangler.toml`. Always use `wrangler secret put` for sensitive values.
+</Warning>
+
+## Edge Runtime Limitations
+
+When running on Cloudflare Workers, be aware of these constraints:
+
+- **No filesystem access**: Use KV, R2, or fetch APIs instead
+- **Stateless by default**: Each request is handled independently
+- **V8 isolates**: Limited to JavaScript/TypeScript runtime
+- **CPU time limits**: Maximum 50ms CPU time on free tier, 30s on paid
+- **Memory limits**: 128MB per request
+- **No long-running connections**: Use Durable Objects for websockets
+
+<Note>
+For session state, consider using [Cloudflare KV](https://developers.cloudflare.com/kv/) or [Durable Objects](https://developers.cloudflare.com/durable-objects/).
+</Note>
+
+## Testing Locally
+
+Test your worker locally before deploying:
+
+```bash
+# Start local development server
+npx wrangler dev
+
+# Test the MCP endpoint
+curl -X POST http://localhost:8787/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list"
+  }'
+
+# Test health check
+curl http://localhost:8787/health
+```
+
+## Monitoring and Logs
+
+View logs and analytics in the Cloudflare dashboard:
+
+```bash
+# Stream logs in real-time
+npx wrangler tail
+
+# View metrics
+npx wrangler metrics
+```
+
+## Next Steps
+
+- [Serverless Deployments](/deployment/serverless) - Deploy to AWS Lambda, Google Cloud Functions
+- [Production Checklist](/deployment/production) - Security and monitoring best practices
+- [Custom Routes](https://hono.dev/docs/guides/routing) - Learn more about Hono routing

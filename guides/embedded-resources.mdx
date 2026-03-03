@@ -1,0 +1,351 @@
+---
+title: Embedded resources
+description: Include resources in tool responses using the embedded() method
+---
+
+The `embedded()` method simplifies including resources in tool responses, reducing code duplication and making it easier to reference resources from within tools.
+
+## Basic usage
+
+Use `server.embedded()` to include a resource in a tool's response:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+// Define a resource
+server.addResource({
+  uri: "system://status",
+  name: "System Status",
+  mimeType: "text/plain",
+  async load() {
+    return {
+      text: "System operational",
+    };
+  },
+});
+
+// Use embedded resource in a tool
+server.addTool({
+  name: "get_system_status",
+  description: "Get current system status",
+  parameters: z.object({}),
+  execute: async () => {
+    return {
+      content: [
+        {
+          type: "resource",
+          resource: await server.embedded("system://status"),
+        },
+      ],
+    };
+  },
+});
+```
+
+## With resource templates
+
+Embedded resources work seamlessly with resource templates:
+
+```typescript
+// Define a resource template
+server.addResourceTemplate({
+  uriTemplate: "docs://project/{section}",
+  name: "Project Documentation",
+  mimeType: "text/markdown",
+  arguments: [
+    {
+      name: "section",
+      description: "Documentation section to retrieve",
+      required: true,
+    },
+  ],
+  async load(args) {
+    const docs = {
+      "getting-started": "# Getting Started\n\nWelcome to our project!",
+      "api-reference": "# API Reference\n\nAuthentication is required.",
+      "deployment": "# Deployment\n\nDeploy with Docker.",
+    };
+    return {
+      text: docs[args.section] || "Documentation not found",
+    };
+  },
+});
+
+// Use embedded resource template in a tool
+server.addTool({
+  name: "get_documentation",
+  description: "Retrieve project documentation",
+  parameters: z.object({
+    section: z.enum(["getting-started", "api-reference", "deployment"]),
+  }),
+  execute: async (args) => {
+    return {
+      content: [
+        {
+          type: "resource",
+          resource: await server.embedded(`docs://project/${args.section}`),
+        },
+      ],
+    };
+  },
+});
+```
+
+## Multiple embedded resources
+
+Include multiple resources in a single response:
+
+```typescript
+server.addTool({
+  name: "get_user_profile",
+  description: "Get complete user profile with all related data",
+  parameters: z.object({
+    userId: z.string(),
+  }),
+  execute: async (args) => {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `User Profile for ID: ${args.userId}`,
+        },
+        {
+          type: "resource",
+          resource: await server.embedded(`user://profile/${args.userId}`),
+        },
+        {
+          type: "resource",
+          resource: await server.embedded(`user://settings/${args.userId}`),
+        },
+        {
+          type: "resource",
+          resource: await server.embedded(`user://activity/${args.userId}`),
+        },
+      ],
+    };
+  },
+});
+```
+
+## Dynamic resource URIs
+
+Construct resource URIs dynamically based on tool parameters:
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "data://{category}/{id}",
+  name: "Data Item",
+  mimeType: "application/json",
+  arguments: [
+    { name: "category", required: true },
+    { name: "id", required: true },
+  ],
+  async load({ category, id }) {
+    const data = await fetchFromDatabase(category, id);
+    return { text: JSON.stringify(data) };
+  },
+});
+
+server.addTool({
+  name: "get_related_items",
+  description: "Get an item and its related items",
+  parameters: z.object({
+    category: z.string(),
+    id: z.string(),
+  }),
+  execute: async (args) => {
+    // Get main item
+    const mainItem = await server.embedded(
+      `data://${args.category}/${args.id}`
+    );
+
+    // Get related items
+    const relatedIds = await getRelatedIds(args.category, args.id);
+    const relatedItems = await Promise.all(
+      relatedIds.map((id) =>
+        server.embedded(`data://${args.category}/${id}`)
+      )
+    );
+
+    return {
+      content: [
+        { type: "text", text: "Main Item:" },
+        { type: "resource", resource: mainItem },
+        { type: "text", text: "\nRelated Items:" },
+        ...relatedItems.map((resource) => ({
+          type: "resource",
+          resource,
+        })),
+      ],
+    };
+  },
+});
+```
+
+## With text and images
+
+Combine embedded resources with text and images:
+
+```typescript
+import { imageContent } from "fastmcp";
+
+server.addTool({
+  name: "get_report",
+  description: "Get a comprehensive report with data and visualizations",
+  parameters: z.object({
+    reportId: z.string(),
+  }),
+  execute: async (args) => {
+    return {
+      content: [
+        {
+          type: "text",
+          text: `# Report ${args.reportId}\n\n`,
+        },
+        {
+          type: "resource",
+          resource: await server.embedded(`reports://data/${args.reportId}`),
+        },
+        {
+          type: "text",
+          text: "\n## Visualization\n\n",
+        },
+        await imageContent({
+          url: `https://example.com/charts/${args.reportId}.png`,
+        }),
+      ],
+    };
+  },
+});
+```
+
+## Error handling
+
+Handle errors when resources don't exist:
+
+```typescript
+import { UserError } from "fastmcp";
+
+server.addTool({
+  name: "get_document",
+  description: "Get a document by ID",
+  parameters: z.object({
+    documentId: z.string(),
+  }),
+  execute: async (args) => {
+    try {
+      const resource = await server.embedded(
+        `docs://documents/${args.documentId}`
+      );
+      return {
+        content: [
+          {
+            type: "resource",
+            resource,
+          },
+        ],
+      };
+    } catch (error) {
+      throw new UserError(
+        `Document not found: ${args.documentId}`
+      );
+    }
+  },
+});
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Define resources separately">
+    Define resources as standalone entities, then reference them in tools. This promotes reusability.
+
+    ```typescript
+    // Good: Reusable resource
+    server.addResource({
+      uri: "config://app",
+      name: "App Configuration",
+      mimeType: "application/json",
+      async load() {
+        return { text: JSON.stringify(config) };
+      },
+    });
+
+    // Multiple tools can use it
+    server.addTool({
+      name: "get_config",
+      execute: async () => ({
+        content: [{ type: "resource", resource: await server.embedded("config://app") }],
+      }),
+    });
+    ```
+  </Step>
+
+  <Step title="Use descriptive URIs">
+    Choose clear, hierarchical URI schemes that make the resource purpose obvious.
+
+    ```typescript
+    // Good: Clear hierarchy
+    "user://profile/{userId}"
+    "docs://api/{endpoint}"
+    "data://reports/{year}/{month}"
+
+    // Bad: Unclear structure
+    "resource://{id}"
+    "data://{type}"
+    ```
+  </Step>
+
+  <Step title="Cache expensive operations">
+    If resource loading is expensive, implement caching in the load function.
+
+    ```typescript
+    const cache = new Map();
+
+    server.addResource({
+      uri: "expensive://computation",
+      name: "Expensive Computation",
+      mimeType: "application/json",
+      async load() {
+        if (cache.has("result")) {
+          return { text: cache.get("result") };
+        }
+        const result = await expensiveOperation();
+        cache.set("result", result);
+        return { text: result };
+      },
+    });
+    ```
+  </Step>
+
+  <Step title="Document resource structure">
+    Provide clear descriptions for resource templates to help users understand what they contain.
+
+    ```typescript
+    server.addResourceTemplate({
+      uriTemplate: "users://{userId}/settings",
+      name: "User Settings",
+      description: "User-specific configuration including preferences, notifications, and privacy settings",
+      mimeType: "application/json",
+      // ...
+    });
+    ```
+  </Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Resources" icon="folder" href="/core/resources">
+    Learn more about defining resources
+  </Card>
+  <Card title="Tools" icon="wrench" href="/core/tools">
+    Back to tool documentation
+  </Card>
+</CardGroup>

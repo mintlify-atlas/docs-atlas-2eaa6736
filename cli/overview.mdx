@@ -1,0 +1,107 @@
+---
+title: CLI Overview
+description: Introduction to the FastMCP command-line interface
+---
+
+The FastMCP CLI provides a set of commands to help you develop, test, and debug your MCP servers efficiently.
+
+## Installation
+
+The CLI is automatically available when you install FastMCP as a dependency:
+
+```bash
+npm install fastmcp
+```
+
+FastMCP should be installed as a **development dependency** in your project. The CLI binary is exposed through the `fastmcp` command.
+
+## Available Commands
+
+The FastMCP CLI provides three main commands:
+
+### `fastmcp dev`
+
+Runs your MCP server in development mode with an interactive CLI interface for testing.
+
+```bash
+npx fastmcp dev <file>
+```
+
+Learn more in the [dev command documentation](/cli/dev).
+
+### `fastmcp inspect`
+
+Launches the MCP Inspector for visual debugging of your server.
+
+```bash
+npx fastmcp inspect <file>
+```
+
+Learn more in the [inspect command documentation](/cli/inspect).
+
+### `fastmcp validate`
+
+Validates your FastMCP server file for syntax and structure.
+
+```bash
+npx fastmcp validate <file>
+```
+
+Validation includes:
+- TypeScript compilation checks
+- Server structure verification
+- Optional strict mode type checking
+
+**Options:**
+- `--strict`, `-s` - Enable strict validation with type checking
+
+## Getting Help
+
+To see all available commands and options:
+
+```bash
+npx fastmcp --help
+```
+
+For help with a specific command:
+
+```bash
+npx fastmcp dev --help
+npx fastmcp inspect --help
+npx fastmcp validate --help
+```
+
+## Quick Example
+
+Here's a quick example workflow:
+
+<CodeGroup>
+
+```bash Test with CLI
+npx fastmcp dev src/server.ts
+```
+
+```bash Visual Debugging
+npx fastmcp inspect src/server.ts
+```
+
+```bash Validate Server
+npx fastmcp validate src/server.ts --strict
+```
+
+</CodeGroup>
+
+<Note>
+  The CLI commands use `npx tsx` under the hood to execute TypeScript files directly, so you don't need to compile your server first.
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dev Command" icon="terminal" href="/cli/dev">
+    Learn about running servers in development mode
+  </Card>
+  <Card title="Inspect Command" icon="magnifying-glass" href="/cli/inspect">
+    Explore visual debugging with MCP Inspector
+  </Card>
+</CardGroup>

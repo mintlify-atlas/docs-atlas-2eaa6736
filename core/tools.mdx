@@ -1,0 +1,471 @@
+---
+title: Tools
+description: Add executable functions to your MCP server that can be invoked by clients and LLMs
+---
+
+## What are Tools?
+
+Tools in MCP allow servers to expose executable functions that can be invoked by clients and used by LLMs to perform actions. They are the primary way to add functionality to your MCP server.
+
+FastMCP uses the [Standard Schema](https://standardschema.dev) specification for defining tool parameters, which means you can use your preferred schema validation library (Zod, ArkType, or Valibot).
+
+## Basic Usage
+
+Add a tool to your server using the `addTool` method:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "add",
+  description: "Add two numbers",
+  parameters: z.object({
+    a: z.number().describe("The first number"),
+    b: z.number().describe("The second number"),
+  }),
+  execute: async (args) => {
+    return String(args.a + args.b);
+  },
+});
+```
+
+## Schema Validation
+
+FastMCP supports multiple schema validation libraries through the Standard Schema specification.
+
+<Tabs>
+  <Tab title="Zod">
+    ```typescript
+    import { z } from "zod";
+
+    server.addTool({
+      name: "fetch-zod",
+      description: "Fetch the content of a url (using Zod)",
+      parameters: z.object({
+        url: z.string(),
+      }),
+      execute: async (args) => {
+        return await fetchWebpageContent(args.url);
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="ArkType">
+    ```typescript
+    import { type } from "arktype";
+
+    server.addTool({
+      name: "fetch-arktype",
+      description: "Fetch the content of a url (using ArkType)",
+      parameters: type({
+        url: "string",
+      }),
+      execute: async (args) => {
+        return await fetchWebpageContent(args.url);
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="Valibot">
+    ```typescript
+    import * as v from "valibot";
+
+    server.addTool({
+      name: "fetch-valibot",
+      description: "Fetch the content of a url (using Valibot)",
+      parameters: v.object({
+        url: v.string(),
+      }),
+      execute: async (args) => {
+        return await fetchWebpageContent(args.url);
+      },
+    });
+    ```
+    <Note>Valibot requires the peer dependency `@valibot/to-json-schema`.</Note>
+  </Tab>
+</Tabs>
+
+## Tools Without Parameters
+
+You can create tools that don't require any parameters:
+
+<CodeGroup>
+```typescript Option 1: Omit parameters
+server.addTool({
+  name: "sayHello",
+  description: "Say hello",
+  execute: async () => {
+    return "Hello, world!";
+  },
+});
+```
+
+```typescript Option 2: Empty parameters
+import { z } from "zod";
+
+server.addTool({
+  name: "sayHello",
+  description: "Say hello",
+  parameters: z.object({}),
+  execute: async () => {
+    return "Hello, world!";
+  },
+});
+```
+</CodeGroup>
+
+<Note>Both approaches are fully compatible with all MCP clients, including Cursor.</Note>
+
+## Return Types
+
+Tools can return different types of content:
+
+### Returning a String
+
+The simplest return type - automatically wrapped as text content:
+
+```typescript
+server.addTool({
+  name: "greet",
+  description: "Greet someone",
+  parameters: z.object({
+    name: z.string(),
+  }),
+  execute: async (args) => {
+    return `Hello, ${args.name}!`;
+  },
+});
+```
+
+### Returning Content Array
+
+For multiple messages or mixed content types:
+
+```typescript
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args) => {
+    return {
+      content: [
+        { type: "text", text: "First message" },
+        { type: "text", text: "Second message" },
+      ],
+    };
+  },
+});
+```
+
+### Returning an Image
+
+Use the `imageContent` helper to return images:
+
+```typescript
+import { imageContent } from "fastmcp";
+
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args) => {
+    // From URL
+    return imageContent({
+      url: "https://example.com/image.png",
+    });
+
+    // From file path
+    // return imageContent({
+    //   path: "/path/to/image.png",
+    // });
+
+    // From buffer
+    // return imageContent({
+    //   buffer: Buffer.from("...", "base64"),
+    // });
+  },
+});
+```
+
+### Returning Audio
+
+Use the `audioContent` helper to return audio files:
+
+```typescript
+import { audioContent } from "fastmcp";
+
+server.addTool({
+  name: "generateSpeech",
+  description: "Generate speech from text",
+  parameters: z.object({
+    text: z.string(),
+  }),
+  execute: async (args) => {
+    return audioContent({
+      url: "https://example.com/audio.mp3",
+    });
+  },
+});
+```
+
+### Combining Content Types
+
+Return multiple content types in a single response:
+
+```typescript
+import { imageContent, audioContent } from "fastmcp";
+
+server.addTool({
+  name: "multiContent",
+  description: "Return multiple content types",
+  execute: async () => {
+    const img = await imageContent({
+      url: "https://example.com/image.png",
+    });
+    const aud = await audioContent({
+      url: "https://example.com/audio.mp3",
+    });
+
+    return {
+      content: [
+        { type: "text", text: "Here's your content:" },
+        img,
+        aud,
+      ],
+    };
+  },
+});
+```
+
+## Tool Authorization
+
+Control access to tools based on user authentication:
+
+```typescript
+server.addTool({
+  name: "admin-tool",
+  description: "An admin-only tool",
+  canAccess: (auth) => auth?.role === "admin",
+  execute: async () => {
+    return "Welcome, admin!";
+  },
+});
+```
+
+See the [Authentication](/authentication/overview) section for more details on authorization helpers like `requireAuth`, `requireScopes`, and `requireRole`.
+
+## Progress Reporting
+
+Report progress during long-running operations:
+
+```typescript
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args, { reportProgress }) => {
+    await reportProgress({ progress: 0, total: 100 });
+    
+    // ... perform work ...
+    
+    await reportProgress({ progress: 50, total: 100 });
+    
+    // ... more work ...
+    
+    await reportProgress({ progress: 100, total: 100 });
+    
+    return "Download complete!";
+  },
+});
+```
+
+## Streaming Output
+
+Stream partial results while the tool is executing:
+
+```typescript
+server.addTool({
+  name: "generateText",
+  description: "Generate text incrementally",
+  parameters: z.object({
+    prompt: z.string(),
+  }),
+  annotations: {
+    streamingHint: true,
+    readOnlyHint: true,
+  },
+  execute: async (args, { streamContent }) => {
+    await streamContent({ type: "text", text: "Starting generation...\n" });
+
+    const words = "The quick brown fox jumps over the lazy dog.".split(" ");
+    for (const word of words) {
+      await streamContent({ type: "text", text: word + " " });
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    // Option 1: Return void if all content was streamed
+    return;
+
+    // Option 2: Return final content to append
+    // return "Generation complete!";
+  },
+});
+```
+
+<Note>
+Set `streamingHint: true` in annotations to signal that the tool uses streaming. You can return `void` if all content was streamed, or return a final result to append.
+</Note>
+
+## Tool Annotations
+
+Provide metadata about tool behavior:
+
+```typescript
+server.addTool({
+  name: "fetch-content",
+  description: "Fetch content from a URL",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  annotations: {
+    title: "Web Content Fetcher",
+    readOnlyHint: true,
+    openWorldHint: true,
+  },
+  execute: async (args) => {
+    return await fetchWebpageContent(args.url);
+  },
+});
+```
+
+### Available Annotations
+
+| Annotation | Type | Default | Description |
+|:-----------|:-----|:--------|:------------|
+| `title` | string | - | Human-readable title for UI display |
+| `readOnlyHint` | boolean | `false` | Tool doesn't modify its environment |
+| `destructiveHint` | boolean | `true` | Tool may perform destructive updates |
+| `idempotentHint` | boolean | `false` | Repeated calls have no additional effect |
+| `openWorldHint` | boolean | `true` | Tool may interact with external entities |
+| `streamingHint` | boolean | `false` | Tool uses streaming output |
+
+## Logging
+
+Log messages to the client during tool execution:
+
+```typescript
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args, { log }) => {
+    log.info("Downloading file...", { url: args.url });
+    
+    // ... perform download ...
+    
+    log.info("Downloaded file");
+    
+    return "done";
+  },
+});
+```
+
+Available log methods:
+- `log.debug(message, data?)`
+- `log.info(message, data?)`  
+- `log.warn(message, data?)`
+- `log.error(message, data?)`
+
+## Error Handling
+
+Throw `UserError` for errors meant to be shown to the user:
+
+```typescript
+import { UserError } from "fastmcp";
+
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args) => {
+    if (args.url.startsWith("https://example.com")) {
+      throw new UserError("This URL is not allowed");
+    }
+    
+    return "done";
+  },
+});
+```
+
+## Timeouts
+
+Set a timeout for tool execution:
+
+```typescript
+server.addTool({
+  name: "longRunning",
+  description: "A long-running operation",
+  timeoutMs: 5000, // 5 seconds
+  execute: async () => {
+    // Will abort after 5 seconds
+    await someSlowOperation();
+    return "done";
+  },
+});
+```
+
+## API Reference
+
+### Tool Type
+
+```typescript
+type Tool<T, Params> = {
+  name: string;
+  description?: string;
+  parameters?: Params; // Standard Schema
+  annotations?: ToolAnnotations;
+  canAccess?: (auth: T) => boolean;
+  timeoutMs?: number;
+  execute: (
+    args: InferredArgs,
+    context: Context<T>
+  ) => Promise<string | Content | ContentResult | void>;
+};
+```
+
+### Context Type
+
+```typescript
+type Context<T> = {
+  session: T | undefined;
+  sessionId?: string;
+  requestId?: string;
+  log: {
+    debug: (message: string, data?: any) => void;
+    info: (message: string, data?: any) => void;
+    warn: (message: string, data?: any) => void;
+    error: (message: string, data?: any) => void;
+  };
+  reportProgress: (progress: Progress) => Promise<void>;
+  streamContent: (content: Content | Content[]) => Promise<void>;
+  client: {
+    version: string;
+  };
+};
+```

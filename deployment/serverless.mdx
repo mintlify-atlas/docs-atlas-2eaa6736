@@ -1,0 +1,503 @@
+---
+title: Serverless Deployments
+description: Deploy FastMCP to serverless platforms like AWS Lambda, Google Cloud Functions, and Azure Functions
+---
+
+FastMCP's stateless mode makes it ideal for serverless deployments where each request is handled independently without maintaining persistent sessions.
+
+## Stateless Mode
+
+Enable stateless mode for serverless environments:
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+    stateless: true,
+  },
+});
+```
+
+### Why Stateless Mode?
+
+In stateless mode:
+
+- **No sessions tracked** - Each request creates a temporary session discarded after response
+- **Reduced memory usage** - Better scalability and lower costs
+- **No session state** - Perfect for serverless environments that don't guarantee instance persistence
+- **Independent requests** - Each invocation is completely isolated
+
+<Note>
+Stateless mode is **only available** with HTTP streaming transport. Features depending on persistent sessions will not be available.
+</Note>
+
+## Configuration Methods
+
+Enable stateless mode in three ways:
+
+<CodeGroup>
+```typescript Programmatic
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+    stateless: true,
+  },
+});
+```
+
+```bash CLI Argument
+npx fastmcp dev src/server.ts --transport http-stream --port 8080 --stateless true
+```
+
+```bash Environment Variable
+FASTMCP_STATELESS=true npx fastmcp dev src/server.ts
+```
+</CodeGroup>
+
+## AWS Lambda Deployment
+
+<Steps>
+  <Step title="Create Lambda Handler">
+    Create a handler that wraps your FastMCP server:
+
+    ```typescript src/lambda.ts
+    import { FastMCP } from "fastmcp";
+    import { z } from "zod";
+    import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+
+    const server = new FastMCP({
+      name: "Lambda MCP Server",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "process_data",
+      description: "Process data in Lambda",
+      parameters: z.object({
+        input: z.string(),
+      }),
+      execute: async ({ input }) => {
+        return `Processed: ${input}`;
+      },
+    });
+
+    // Start in stateless mode
+    let serverStarted = false;
+    const startServer = async () => {
+      if (!serverStarted) {
+        await server.start({
+          transportType: "httpStream",
+          httpStream: {
+            port: 0, // Port not used in Lambda
+            stateless: true,
+          },
+        });
+        serverStarted = true;
+      }
+    };
+
+    export const handler = async (
+      event: APIGatewayProxyEvent
+    ): Promise<APIGatewayProxyResult> => {
+      await startServer();
+
+      // Convert API Gateway event to Request
+      const request = new Request(
+        `https://${event.headers.Host}${event.path}`,
+        {
+          method: event.httpMethod,
+          headers: event.headers,
+          body: event.body,
+        }
+      );
+
+      // Handle with FastMCP internal handler
+      // Note: This requires accessing internal methods
+      // For production, consider using a middleware adapter
+
+      return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Success" }),
+      };
+    };
+    ```
+  </Step>
+
+  <Step title="Configure SAM or Serverless Framework">
+    <CodeGroup>
+    ```yaml SAM template.yaml
+    AWSTemplateFormatVersion: '2010-09-09'
+    Transform: AWS::Serverless-2016-10-31
+
+    Resources:
+      MCPFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+          Handler: dist/lambda.handler
+          Runtime: nodejs20.x
+          MemorySize: 512
+          Timeout: 30
+          Environment:
+            Variables:
+              NODE_ENV: production
+              FASTMCP_STATELESS: 'true'
+          Events:
+            ApiEvent:
+              Type: Api
+              Properties:
+                Path: /{proxy+}
+                Method: ANY
+    ```
+
+    ```yaml Serverless serverless.yml
+    service: fastmcp-lambda
+
+    provider:
+      name: aws
+      runtime: nodejs20.x
+      memorySize: 512
+      timeout: 30
+      environment:
+        NODE_ENV: production
+        FASTMCP_STATELESS: 'true'
+
+    functions:
+      mcp:
+        handler: dist/lambda.handler
+        events:
+          - http:
+              path: /{proxy+}
+              method: ANY
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Deploy">
+    ```bash
+    # Build TypeScript
+    npm run build
+
+    # Deploy with SAM
+    sam build && sam deploy --guided
+
+    # Or deploy with Serverless Framework
+    serverless deploy
+    ```
+  </Step>
+</Steps>
+
+## Google Cloud Functions
+
+<Steps>
+  <Step title="Create HTTP Function">
+    ```typescript src/index.ts
+    import { FastMCP } from "fastmcp";
+    import { z } from "zod";
+    import { Request, Response } from "@google-cloud/functions-framework";
+
+    const server = new FastMCP({
+      name: "GCP MCP Server",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "cloud_process",
+      description: "Process data in Google Cloud",
+      parameters: z.object({
+        data: z.string(),
+      }),
+      execute: async ({ data }) => {
+        return `Processed in GCP: ${data}`;
+      },
+    });
+
+    let initialized = false;
+
+    export const mcpHandler = async (req: Request, res: Response) => {
+      if (!initialized) {
+        await server.start({
+          transportType: "httpStream",
+          httpStream: {
+            port: 0,
+            stateless: true,
+          },
+        });
+        initialized = true;
+      }
+
+      // Handle request with FastMCP
+      res.status(200).json({ message: "Success" });
+    };
+    ```
+  </Step>
+
+  <Step title="Deploy to Google Cloud">
+    ```bash
+    gcloud functions deploy mcp-server \
+      --runtime nodejs20 \
+      --trigger-http \
+      --allow-unauthenticated \
+      --entry-point mcpHandler \
+      --memory 512MB \
+      --timeout 60s \
+      --set-env-vars FASTMCP_STATELESS=true
+    ```
+  </Step>
+</Steps>
+
+## Azure Functions
+
+<Steps>
+  <Step title="Create HTTP Trigger Function">
+    ```typescript src/functions/mcp.ts
+    import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+    import { FastMCP } from "fastmcp";
+    import { z } from "zod";
+
+    const server = new FastMCP({
+      name: "Azure MCP Server",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "azure_process",
+      description: "Process data in Azure",
+      parameters: z.object({
+        input: z.string(),
+      }),
+      execute: async ({ input }) => {
+        return `Processed in Azure: ${input}`;
+      },
+    });
+
+    let started = false;
+
+    export async function mcpHandler(
+      request: HttpRequest,
+      context: InvocationContext
+    ): Promise<HttpResponseInit> {
+      if (!started) {
+        await server.start({
+          transportType: "httpStream",
+          httpStream: {
+            port: 0,
+            stateless: true,
+          },
+        });
+        started = true;
+      }
+
+      return {
+        status: 200,
+        jsonBody: { message: "Success" },
+      };
+    }
+
+    app.http("mcp", {
+      methods: ["GET", "POST"],
+      authLevel: "anonymous",
+      handler: mcpHandler,
+    });
+    ```
+  </Step>
+
+  <Step title="Configure host.json">
+    ```json host.json
+    {
+      "version": "2.0",
+      "extensionBundle": {
+        "id": "Microsoft.Azure.Functions.ExtensionBundle",
+        "version": "[4.*, 5.0.0)"
+      },
+      "functionTimeout": "00:01:00"
+    }
+    ```
+  </Step>
+
+  <Step title="Deploy to Azure">
+    ```bash
+    # Create Function App
+    az functionapp create \
+      --name fastmcp-server \
+      --resource-group myResourceGroup \
+      --consumption-plan-location eastus \
+      --runtime node \
+      --runtime-version 20 \
+      --functions-version 4
+
+    # Deploy
+    func azure functionapp publish fastmcp-server
+    ```
+  </Step>
+</Steps>
+
+## Best Practices
+
+### Environment Variables
+
+Manage configuration across environments:
+
+```typescript
+const server = new FastMCP({
+  name: process.env.MCP_SERVER_NAME || "MCP Server",
+  version: process.env.MCP_VERSION || "1.0.0",
+});
+
+server.addTool({
+  name: "api_call",
+  description: "Call external API",
+  execute: async () => {
+    const apiKey = process.env.API_KEY;
+    const endpoint = process.env.API_ENDPOINT;
+    
+    if (!apiKey || !endpoint) {
+      throw new Error("Missing required environment variables");
+    }
+
+    const response = await fetch(endpoint, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+
+    return response.text();
+  },
+});
+```
+
+### Cold Start Optimization
+
+Minimize cold start times:
+
+```typescript
+// Initialize server outside handler (reused across warm starts)
+const server = new FastMCP({
+  name: "Optimized Server",
+  version: "1.0.0",
+});
+
+// Add tools during initialization
+server.addTool({
+  name: "quick_tool",
+  description: "Fast tool execution",
+  execute: async () => "Quick response",
+});
+
+// Lazy-load heavy dependencies
+let heavyDependency: any = null;
+const getHeavyDependency = async () => {
+  if (!heavyDependency) {
+    heavyDependency = await import("heavy-package");
+  }
+  return heavyDependency;
+};
+```
+
+### Error Handling
+
+Implement robust error handling:
+
+```typescript
+import { UserError } from "fastmcp";
+
+server.addTool({
+  name: "safe_operation",
+  description: "Operation with error handling",
+  execute: async ({ input }) => {
+    try {
+      // Validation
+      if (!input) {
+        throw new UserError("Input is required");
+      }
+
+      // External API call
+      const response = await fetch("https://api.example.com/data");
+      
+      if (!response.ok) {
+        throw new UserError(`API error: ${response.statusText}`);
+      }
+
+      return await response.text();
+    } catch (error) {
+      if (error instanceof UserError) {
+        throw error; // User-facing error
+      }
+      // Log internal errors, show generic message
+      console.error("Internal error:", error);
+      throw new UserError("An unexpected error occurred");
+    }
+  },
+});
+```
+
+### Health Checks
+
+The `/ready` endpoint reports stateless mode status:
+
+```bash
+curl https://your-function.cloud/ready
+```
+
+```json
+{
+  "mode": "stateless",
+  "ready": 1,
+  "status": "ready",
+  "total": 1
+}
+```
+
+## Monitoring
+
+Each platform provides monitoring tools:
+
+<CodeGroup>
+```bash AWS CloudWatch
+# View Lambda logs
+aws logs tail /aws/lambda/mcp-function --follow
+
+# View metrics
+aws cloudwatch get-metric-statistics \
+  --namespace AWS/Lambda \
+  --metric-name Duration \
+  --dimensions Name=FunctionName,Value=mcp-function \
+  --start-time 2024-01-01T00:00:00Z \
+  --end-time 2024-01-02T00:00:00Z \
+  --period 3600 \
+  --statistics Average
+```
+
+```bash Google Cloud Logging
+# View function logs
+gcloud functions logs read mcp-server --limit 50
+
+# Stream logs
+gcloud functions logs read mcp-server --follow
+```
+
+```bash Azure Monitor
+# View function logs
+az monitor log-analytics query \
+  --workspace <workspace-id> \
+  --analytics-query "FunctionAppLogs | where FunctionName == 'mcp'"
+```
+</CodeGroup>
+
+## Performance Considerations
+
+- **Memory allocation**: Increase for complex operations (512MB-1GB recommended)
+- **Timeout settings**: Set appropriate timeouts (30-60s for most operations)
+- **Connection pooling**: Reuse HTTP clients across invocations
+- **Async operations**: Use `async/await` for all I/O operations
+- **Bundle size**: Minimize dependencies to reduce cold start time
+
+<Warning>
+Stateless mode means each request is independent. Do not rely on in-memory state between requests.
+</Warning>
+
+## Next Steps
+
+- [Production Checklist](/deployment/production) - Security and monitoring best practices
+- [Cloudflare Workers](/deployment/cloudflare-workers) - Deploy to Cloudflare's edge network
+- [Authentication](/features/authentication) - Secure your serverless MCP server

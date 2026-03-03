@@ -1,0 +1,315 @@
+---
+title: Content Helpers
+description: Helper functions for creating MCP content types
+---
+
+FastMCP provides helper functions to create image and audio content from various sources.
+
+## imageContent()
+
+Create image content from a buffer, file path, or URL.
+
+```typescript
+import { imageContent } from "fastmcp";
+
+// From URL
+const image1 = await imageContent({ 
+  url: "https://example.com/image.png" 
+});
+
+// From file path
+const image2 = await imageContent({ 
+  path: "/path/to/image.jpg" 
+});
+
+// From buffer
+const buffer = Buffer.from("...");
+const image3 = await imageContent({ 
+  buffer 
+});
+
+// Use in tool response
+server.addTool({
+  name: "get_chart",
+  execute: async () => {
+    const chart = await generateChart();
+    return await imageContent({ buffer: chart });
+  },
+});
+```
+
+### Parameters
+
+<ParamField path="input" type="object" required>
+  Image source (must provide exactly one)
+
+  <Expandable title="options">
+    <ParamField path="url" type="string">
+      HTTP(S) URL to fetch image from
+
+      ```typescript
+      { url: "https://example.com/image.png" }
+      ```
+    </ParamField>
+
+    <ParamField path="path" type="string">
+      Local file system path
+
+      ```typescript
+      { path: "/path/to/image.jpg" }
+      ```
+    </ParamField>
+
+    <ParamField path="buffer" type="Buffer">
+      Raw image data buffer
+
+      ```typescript
+      { buffer: Buffer.from(...) }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="Promise<ImageContent>">
+  Image content object
+
+  ```typescript
+  {
+    type: "image",
+    data: string,      // Base64-encoded image data
+    mimeType: string,  // Auto-detected (e.g., "image/png", "image/jpeg")
+  }
+  ```
+</ResponseField>
+
+### Features
+
+- **Auto-detection**: Automatically detects MIME type using `file-type` package
+- **Base64 encoding**: Converts image data to base64 for MCP protocol
+- **Format validation**: Warns if content doesn't appear to be a valid image
+- **Error handling**: Clear error messages for fetch failures, file read errors
+
+### Supported Formats
+
+Any image format supported by the `file-type` package:
+- PNG (`.png`)
+- JPEG (`.jpg`, `.jpeg`)
+- GIF (`.gif`)
+- WebP (`.webp`)
+- SVG (`.svg`)
+- BMP (`.bmp`)
+- ICO (`.ico`)
+- And many more...
+
+### Error Handling
+
+```typescript
+try {
+  const image = await imageContent({ url: "https://example.com/image.png" });
+} catch (error) {
+  if (error instanceof Error) {
+    console.error(error.message);
+    // Possible errors:
+    // - "Failed to fetch image from URL (...): ..."
+    // - "Failed to read image from path (...): ..."
+    // - "Invalid input: Provide a valid 'url', 'path', or 'buffer'"
+  }
+}
+```
+
+## audioContent()
+
+Create audio content from a buffer, file path, or URL.
+
+```typescript
+import { audioContent } from "fastmcp";
+
+// From URL
+const audio1 = await audioContent({ 
+  url: "https://example.com/audio.mp3" 
+});
+
+// From file path
+const audio2 = await audioContent({ 
+  path: "/path/to/audio.wav" 
+});
+
+// From buffer
+const buffer = Buffer.from("...");
+const audio3 = await audioContent({ 
+  buffer 
+});
+
+// Use in tool response
+server.addTool({
+  name: "text_to_speech",
+  execute: async ({ text }) => {
+    const audioBuffer = await synthesizeSpeech(text);
+    return await audioContent({ buffer: audioBuffer });
+  },
+});
+```
+
+### Parameters
+
+<ParamField path="input" type="object" required>
+  Audio source (must provide exactly one)
+
+  <Expandable title="options">
+    <ParamField path="url" type="string">
+      HTTP(S) URL to fetch audio from
+
+      ```typescript
+      { url: "https://example.com/audio.mp3" }
+      ```
+    </ParamField>
+
+    <ParamField path="path" type="string">
+      Local file system path
+
+      ```typescript
+      { path: "/path/to/audio.wav" }
+      ```
+    </ParamField>
+
+    <ParamField path="buffer" type="Buffer">
+      Raw audio data buffer
+
+      ```typescript
+      { buffer: Buffer.from(...) }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Returns
+
+<ResponseField name="result" type="Promise<AudioContent>">
+  Audio content object
+
+  ```typescript
+  {
+    type: "audio",
+    data: string,      // Base64-encoded audio data
+    mimeType: string,  // Auto-detected (e.g., "audio/mpeg", "audio/wav")
+  }
+  ```
+</ResponseField>
+
+### Features
+
+- **Auto-detection**: Automatically detects MIME type using `file-type` package
+- **Base64 encoding**: Converts audio data to base64 for MCP protocol
+- **Format validation**: Warns if content doesn't appear to be valid audio
+- **Error handling**: Clear error messages for fetch failures, file read errors
+
+### Supported Formats
+
+Any audio format supported by the `file-type` package:
+- MP3 (`.mp3`)
+- WAV (`.wav`)
+- OGG (`.ogg`)
+- FLAC (`.flac`)
+- AAC (`.aac`)
+- M4A (`.m4a`)
+- OPUS (`.opus`)
+- And more...
+
+### Error Handling
+
+```typescript
+try {
+  const audio = await audioContent({ url: "https://example.com/audio.mp3" });
+} catch (error) {
+  if (error instanceof Error) {
+    console.error(error.message);
+    // Possible errors:
+    // - "Failed to fetch audio from URL (...): ..."
+    // - "Failed to read audio from path (...): ..."
+    // - "Invalid input: Provide a valid 'url', 'path', or 'buffer'"
+  }
+}
+```
+
+## Usage Examples
+
+### Return multiple content types
+
+```typescript
+import { imageContent, audioContent } from "fastmcp";
+
+server.addTool({
+  name: "media_analysis",
+  description: "Analyze media and return visualization",
+  execute: async ({ videoUrl }) => {
+    const thumbnail = await extractThumbnail(videoUrl);
+    const audioTrack = await extractAudio(videoUrl);
+    
+    return {
+      content: [
+        { type: "text", text: "Analysis results:" },
+        await imageContent({ buffer: thumbnail }),
+        await audioContent({ buffer: audioTrack }),
+      ],
+    };
+  },
+});
+```
+
+### Download and return image
+
+```typescript
+import { imageContent } from "fastmcp";
+
+server.addTool({
+  name: "get_screenshot",
+  description: "Screenshot a website",
+  parameters: z.object({
+    url: z.string().url(),
+  }),
+  execute: async ({ url }) => {
+    const screenshot = await takeScreenshot(url);
+    return await imageContent({ buffer: screenshot });
+  },
+});
+```
+
+### Generate and return audio
+
+```typescript
+import { audioContent } from "fastmcp";
+
+server.addTool({
+  name: "generate_tone",
+  description: "Generate audio tone",
+  parameters: z.object({
+    frequency: z.number(),
+    duration: z.number(),
+  }),
+  execute: async ({ frequency, duration }) => {
+    const audioBuffer = generateTone(frequency, duration);
+    return await audioContent({ buffer: audioBuffer });
+  },
+});
+```
+
+### Resource with image content
+
+```typescript
+import { imageContent } from "fastmcp";
+
+server.addResource({
+  uri: "app://logo",
+  name: "App Logo",
+  mimeType: "image/png",
+  load: async () => {
+    const logo = await imageContent({ path: "./assets/logo.png" });
+    return {
+      blob: logo.data,
+      mimeType: logo.mimeType,
+    };
+  },
+});
+```

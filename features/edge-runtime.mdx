@@ -1,0 +1,409 @@
+---
+title: Edge Runtime
+description: Deploy FastMCP servers to Cloudflare Workers and edge runtimes
+---
+
+FastMCP supports edge runtimes like Cloudflare Workers, enabling deployment of MCP servers to the edge with minimal latency worldwide.
+
+## Choosing Between FastMCP and EdgeFastMCP
+
+| Use Case | Class | Import |
+|----------|-------|--------|
+| Node.js, Express, Bun | `FastMCP` | `import { FastMCP } from "fastmcp"` |
+| Cloudflare Workers, Deno Deploy | `EdgeFastMCP` | `import { EdgeFastMCP } from "fastmcp/edge"` |
+
+### Feature Comparison
+
+| Feature | FastMCP | EdgeFastMCP |
+|---------|---------|-------------|
+| Runtime | Node.js | Edge (V8 isolates) |
+| Start method | `server.start({ port })` | `export default server` |
+| Transport | stdio, httpStream, SSE | HTTP Streamable only |
+| Sessions | Stateful or stateless | Stateless only |
+| File system | Yes | No |
+| OAuth/Authentication | Built-in `authenticate` option | Use Hono middleware (built-in planned) |
+| Custom routes | `server.getApp()` | `server.getApp()` |
+
+<Note>
+  Built-in authentication for EdgeFastMCP is planned for a future release. Both FastMCP and EdgeFastMCP use Hono internally, so there's no technical barrier—EdgeFastMCP was simply written before OAuth was added to FastMCP.
+
+  In the meantime, use Hono middleware:
+  ```typescript
+  const app = server.getApp();
+  app.use("/api/*", async (c, next) => {
+    if (c.req.header("authorization") !== "Bearer secret") {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    await next();
+  });
+  ```
+</Note>
+
+## Quick Start
+
+### 1. Install Dependencies
+
+```bash
+npm install fastmcp zod
+```
+
+### 2. Create Your Server
+
+```typescript src/index.ts
+import { EdgeFastMCP } from "fastmcp/edge";
+import { z } from "zod";
+
+const server = new EdgeFastMCP({
+  name: "My Edge Server",
+  version: "1.0.0",
+  description: "MCP server running on Cloudflare Workers",
+});
+
+// Add tools, resources, prompts as usual
+server.addTool({
+  name: "greet",
+  description: "Greet someone",
+  parameters: z.object({
+    name: z.string(),
+  }),
+  execute: async ({ name }) => {
+    return `Hello, ${name}! Served from the edge.`;
+  },
+});
+
+// Export the server as the default (required for Cloudflare Workers)
+export default server;
+```
+
+### 3. Configure Wrangler
+
+```toml wrangler.toml
+name = "my-mcp-server"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+```
+
+### 4. Deploy
+
+```bash
+npx wrangler deploy
+```
+
+## Edge Runtime Differences
+
+When running on edge runtimes:
+
+<Steps>
+  <Step title="Stateless by Default">
+    Each request is handled independently. Use external storage (KV, D1, R2) for persistence.
+  </Step>
+
+  <Step title="No Filesystem Access">
+    Use fetch APIs for external data instead of reading files.
+  </Step>
+
+  <Step title="V8 Isolates">
+    Fast cold starts and efficient resource usage. Your code runs in isolated V8 contexts.
+  </Step>
+
+  <Step title="Global Deployment">
+    Automatic distribution to edge locations worldwide for minimal latency.
+  </Step>
+</Steps>
+
+## Complete Example
+
+Here's a complete example from the FastMCP repository:
+
+```typescript src/examples/edge-cloudflare-worker.ts
+import { EdgeFastMCP } from "fastmcp/edge";
+import { z } from "zod";
+
+// Create the edge-compatible MCP server
+const server = new EdgeFastMCP({
+  description: "An MCP server running on Cloudflare Workers",
+  name: "CloudflareWorkerMCP",
+  version: "1.0.0",
+});
+
+// Add a simple tool
+server.addTool({
+  description: "Greet someone by name",
+  execute: async ({ name }) => {
+    return `Hello, ${name}! This response is from a Cloudflare Worker.`;
+  },
+  name: "greet",
+  parameters: z.object({
+    name: z.string().describe("The name to greet"),
+  }),
+});
+
+// Add a tool that returns structured content
+server.addTool({
+  description: "Get weather information for a location",
+  execute: async ({ location }) => {
+    // In a real app, you would call a weather API here
+    return {
+      content: [
+        {
+          text: `Weather for ${location}:\n- Temperature: 72°F\n- Conditions: Sunny\n- Humidity: 45%`,
+          type: "text",
+        },
+      ],
+    };
+  },
+  name: "get_weather",
+  parameters: z.object({
+    location: z.string().describe("The city or location"),
+  }),
+});
+
+// Add a static resource
+server.addResource({
+  description: "Information about this MCP server",
+  load: async () => {
+    return "This is a FastMCP server running on Cloudflare Workers edge runtime.";
+  },
+  mimeType: "text/plain",
+  name: "Server Info",
+  uri: "info://server",
+});
+
+// Add a prompt template
+server.addPrompt({
+  arguments: [
+    { description: "Programming language", name: "language", required: true },
+    {
+      description: "What to focus on (optional)",
+      name: "focus",
+      required: false,
+    },
+  ],
+  description: "Generate a prompt to analyze code",
+  load: async (args) => {
+    const focus = args.focus ? ` focusing on ${args.focus}` : "";
+    return {
+      messages: [
+        {
+          content: {
+            text: `Please analyze the following ${args.language} code${focus}:`,
+            type: "text",
+          },
+          role: "user",
+        },
+      ],
+    };
+  },
+  name: "analyze_code",
+});
+
+// Export the server as the default (Cloudflare Workers format)
+export default server;
+```
+
+## Custom Routes on Edge
+
+You can access the underlying Hono app to add custom HTTP routes:
+
+```typescript
+import { EdgeFastMCP } from "fastmcp/edge";
+
+const server = new EdgeFastMCP({
+  name: "My Edge Server",
+  version: "1.0.0",
+});
+
+const app = server.getApp();
+
+// Add a landing page
+app.get("/", (c) => c.html("<h1>Welcome to my MCP server</h1>"));
+
+// Add REST API endpoints
+app.get("/api/status", (c) => c.json({ status: "ok" }));
+
+// Add custom routes with authentication
+app.get("/api/protected", async (c) => {
+  const auth = c.req.header("authorization");
+  if (auth !== "Bearer secret") {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+  return c.json({ data: "protected" });
+});
+
+export default server;
+```
+
+## Using Cloudflare Bindings
+
+Access Cloudflare Workers bindings (KV, D1, R2) in your tools:
+
+<Tabs>
+  <Tab title="KV Storage">
+    ```typescript
+    import { EdgeFastMCP } from "fastmcp/edge";
+
+    interface Env {
+      MY_KV: KVNamespace;
+    }
+
+    const server = new EdgeFastMCP({
+      name: "KV Example",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "get_value",
+      description: "Get a value from KV",
+      parameters: z.object({
+        key: z.string(),
+      }),
+      execute: async ({ key }, { env }) => {
+        const value = await (env as Env).MY_KV.get(key);
+        return value || "Not found";
+      },
+    });
+
+    export default server;
+    ```
+  </Tab>
+
+  <Tab title="D1 Database">
+    ```typescript
+    import { EdgeFastMCP } from "fastmcp/edge";
+
+    interface Env {
+      DB: D1Database;
+    }
+
+    const server = new EdgeFastMCP({
+      name: "D1 Example",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "query_users",
+      description: "Query users from D1",
+      execute: async (_, { env }) => {
+        const { results } = await (env as Env).DB.prepare(
+          "SELECT * FROM users"
+        ).all();
+        return JSON.stringify(results);
+      },
+    });
+
+    export default server;
+    ```
+  </Tab>
+
+  <Tab title="R2 Storage">
+    ```typescript
+    import { EdgeFastMCP } from "fastmcp/edge";
+
+    interface Env {
+      MY_BUCKET: R2Bucket;
+    }
+
+    const server = new EdgeFastMCP({
+      name: "R2 Example",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "get_file",
+      description: "Get a file from R2",
+      parameters: z.object({
+        filename: z.string(),
+      }),
+      execute: async ({ filename }, { env }) => {
+        const object = await (env as Env).MY_BUCKET.get(filename);
+        if (!object) return "File not found";
+        const text = await object.text();
+        return text;
+      },
+    });
+
+    export default server;
+    ```
+  </Tab>
+</Tabs>
+
+## Local Development
+
+Test your edge server locally with Wrangler:
+
+```bash
+# Start dev server
+npx wrangler dev
+
+# Test with MCP Inspector
+MCP_SERVER_URL=http://localhost:8787/mcp npx @modelcontextprotocol/inspector
+```
+
+## Deployment Best Practices
+
+<Steps>
+  <Step title="Use Environment Variables">
+    Store secrets in Wrangler secrets, not in code:
+    ```bash
+    npx wrangler secret put API_KEY
+    ```
+
+    Access in your code:
+    ```typescript
+    const apiKey = (env as Env).API_KEY;
+    ```
+  </Step>
+
+  <Step title="Enable Caching">
+    Use Cache API for expensive operations:
+    ```typescript
+    const cache = caches.default;
+    const cacheKey = new Request(url, { method: "GET" });
+    let response = await cache.match(cacheKey);
+
+    if (!response) {
+      response = await fetch(url);
+      await cache.put(cacheKey, response.clone());
+    }
+    ```
+  </Step>
+
+  <Step title="Monitor Performance">
+    Use Cloudflare Analytics to monitor:
+    - Request rates
+    - CPU time
+    - Response times
+    - Error rates
+  </Step>
+
+  <Step title="Set Resource Limits">
+    Configure limits in `wrangler.toml`:
+    ```toml
+    [limits]
+    cpu_ms = 50
+    ```
+  </Step>
+</Steps>
+
+## Limitations
+
+<Warning>
+  Edge runtimes have some limitations:
+
+  - No filesystem access (use KV, R2, or fetch)
+  - Limited CPU time per request (typically 50ms)
+  - Smaller memory limits
+  - No native Node.js modules
+  - Stateless only (no persistent sessions in memory)
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Custom Routes" icon="route" href="/features/custom-routes">
+    Learn how to add custom HTTP routes to your edge server
+  </Card>
+  <Card title="Streaming" icon="stream" href="/features/streaming">
+    Implement streaming responses in your tools
+  </Card>
+</CardGroup>

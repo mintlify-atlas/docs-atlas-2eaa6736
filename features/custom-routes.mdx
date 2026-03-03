@@ -1,0 +1,513 @@
+---
+title: Custom Routes
+description: Add custom HTTP routes for REST APIs, webhooks, and admin interfaces
+---
+
+FastMCP allows you to add custom HTTP routes alongside MCP endpoints, enabling you to build comprehensive HTTP services that include REST APIs, webhooks, admin interfaces, and more - all within the same server process.
+
+## Quick Start
+
+Add custom routes using the `addRoute` method or by accessing the underlying Hono app:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+// Add REST API endpoints
+server.addRoute("GET", "/api/users", async (req, res) => {
+  res.json({ users: [] });
+});
+
+// Handle path parameters
+server.addRoute("GET", "/api/users/:id", async (req, res) => {
+  res.json({
+    userId: req.params.id,
+    query: req.query, // Access query parameters
+  });
+});
+
+// Handle POST requests with body parsing
+server.addRoute("POST", "/api/users", async (req, res) => {
+  const body = await req.json();
+  res.status(201).json({ created: body });
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: { port: 8080 },
+});
+```
+
+## Using Hono's Native API
+
+For advanced use cases, access the underlying Hono app directly:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+// Get the Hono app instance
+const app = server.getApp();
+
+// Use Hono's native methods
+app.get("/api/users", async (c) => {
+  const userList = await getUsersFromDatabase();
+  return c.json({
+    count: userList.length,
+    users: userList,
+  });
+});
+
+app.post("/api/users", async (c) => {
+  const body = await c.req.json();
+  const newUser = await createUser(body);
+  return c.json(newUser, 201);
+});
+```
+
+## Path Parameters and Wildcards
+
+Custom routes support path parameters and wildcard patterns:
+
+<Tabs>
+  <Tab title="Path Parameters">
+    ```typescript
+    server.addRoute("GET", "/api/users/:id", async (req, res) => {
+      const userId = req.params.id;
+      res.json({ userId });
+    });
+
+    server.addRoute("GET", "/api/posts/:postId/comments/:commentId", async (req, res) => {
+      res.json({
+        postId: req.params.postId,
+        commentId: req.params.commentId,
+      });
+    });
+    ```
+  </Tab>
+
+  <Tab title="Wildcards">
+    ```typescript
+    // Serve static files
+    server.addRoute(
+      "GET",
+      "/public/*",
+      async (req, res) => {
+        res.send(`File: ${req.url}`);
+      },
+      { public: true },
+    );
+
+    // Catch-all route
+    server.addRoute("GET", "/*", async (req, res) => {
+      res.status(404).json({ error: "Not found" });
+    });
+    ```
+  </Tab>
+
+  <Tab title="Query Parameters">
+    ```typescript
+    server.addRoute("GET", "/api/search", async (req, res) => {
+      const query = req.query.q;
+      const page = parseInt(req.query.page || "1");
+      const limit = parseInt(req.query.limit || "10");
+
+      res.json({
+        query,
+        page,
+        limit,
+        results: [],
+      });
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Public Routes
+
+By default, custom routes require authentication (if configured). Make routes public by adding the `{ public: true }` option:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+  authenticate: (request) => {
+    const apiKey = request.headers["x-api-key"];
+    if (apiKey !== "secret") {
+      throw new Response(null, { status: 401 });
+    }
+    return { userId: 1 };
+  },
+});
+
+// Public route - no authentication required
+server.addRoute(
+  "GET",
+  "/.well-known/openid-configuration",
+  async (req, res) => {
+    res.json({
+      issuer: "https://example.com",
+      authorization_endpoint: "https://example.com/auth",
+      token_endpoint: "https://example.com/token",
+    });
+  },
+  { public: true },
+);
+
+// Private route - requires authentication
+server.addRoute("GET", "/api/users", async (req, res) => {
+  // req.auth contains authenticated user data
+  res.json({ users: [] });
+});
+```
+
+<Note>
+  Public routes are perfect for:
+  - OAuth discovery endpoints (`.well-known/*`)
+  - Health checks and status pages
+  - Static assets and documentation
+  - Webhook endpoints from external services
+</Note>
+
+## Real-World Examples
+
+### REST API
+
+```typescript
+const users = new Map();
+
+// List users
+app.get("/api/users", async (c) => {
+  const userList = Array.from(users.values());
+  return c.json({
+    count: userList.length,
+    users: userList,
+  });
+});
+
+// Get user by ID
+app.get("/api/users/:id", async (c) => {
+  const id = c.req.param("id");
+  const user = users.get(id);
+  if (!user) {
+    return c.json({ error: "User not found" }, 404);
+  }
+  return c.json(user);
+});
+
+// Create user
+app.post("/api/users", async (c) => {
+  const body = await c.req.json();
+  const id = String(users.size + 1);
+  const newUser = { id, ...body };
+  users.set(id, newUser);
+  return c.json(newUser, 201);
+});
+
+// Update user
+app.put("/api/users/:id", async (c) => {
+  const id = c.req.param("id");
+  const user = users.get(id);
+  if (!user) {
+    return c.json({ error: "User not found" }, 404);
+  }
+  const body = await c.req.json();
+  const updatedUser = { ...user, ...body, id };
+  users.set(id, updatedUser);
+  return c.json(updatedUser);
+});
+
+// Delete user
+app.delete("/api/users/:id", async (c) => {
+  const id = c.req.param("id");
+  if (!users.has(id)) {
+    return c.json({ error: "User not found" }, 404);
+  }
+  users.delete(id);
+  return c.body(null, 204);
+});
+```
+
+### Admin Interface
+
+```typescript
+app.get("/admin", async (c) => {
+  const auth = await getAuth(c);
+  if (!auth || auth.role !== "admin") {
+    return c.json({ error: "Admin access required" }, 403);
+  }
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Admin Dashboard</title>
+      <style>
+        body { font-family: sans-serif; margin: 40px; }
+        .stats { background: #f0f0f0; padding: 20px; border-radius: 8px; }
+      </style>
+    </head>
+    <body>
+      <h1>Admin Dashboard</h1>
+      <div class="stats">
+        <div>Total Users: ${users.size}</div>
+        <div>Server Time: ${new Date().toISOString()}</div>
+      </div>
+    </body>
+    </html>
+  `;
+  return c.html(html);
+});
+```
+
+### Webhooks
+
+```typescript
+app.post("/webhook/github", async (c) => {
+  const payload = await c.req.json();
+  const event = c.req.header("x-github-event");
+
+  console.log(`GitHub webhook received: ${event}`, payload);
+
+  // Process webhook (e.g., trigger MCP tools)
+  return c.json({ event, received: true });
+});
+
+app.post("/webhook/stripe", async (c) => {
+  const signature = c.req.header("stripe-signature");
+  const body = await c.req.text();
+
+  // Verify webhook signature
+  // Process payment event
+
+  return c.json({ received: true });
+});
+```
+
+### File Upload
+
+```typescript
+app.post("/upload", async (c) => {
+  const auth = await getAuth(c);
+  if (!auth) {
+    return c.json({ error: "Authentication required" }, 401);
+  }
+
+  try {
+    const body = await c.req.text();
+    const size = Buffer.byteLength(body);
+
+    return c.json({
+      message: "File received",
+      size: `${size} bytes`,
+    });
+  } catch (error) {
+    return c.json(
+      {
+        error: error instanceof Error ? error.message : "Upload failed",
+      },
+      500,
+    );
+  }
+});
+```
+
+## Integration with MCP Tools
+
+Custom routes can interact with MCP tools and share data:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+const app = server.getApp();
+const users = new Map();
+
+// REST API endpoint
+app.get("/api/users", async (c) => {
+  const userList = Array.from(users.values());
+  return c.json({ users: userList });
+});
+
+// MCP tool that uses the same data
+server.addTool({
+  description: "List all users from the REST API",
+  execute: async () => {
+    const userList = Array.from(users.values());
+    return {
+      content: [
+        {
+          text: `Found ${userList.length} users:\n${userList
+            .map((u) => `- ${u.name} (${u.email})`)
+            .join("\n")}`,
+          type: "text",
+        },
+      ],
+    };
+  },
+  name: "list_users",
+  parameters: z.object({}),
+});
+
+// MCP tool that creates users
+server.addTool({
+  description: "Create a new user via the REST API",
+  execute: async ({ email, name }) => {
+    const id = String(users.size + 1);
+    const newUser = { email, id, name };
+    users.set(id, newUser);
+
+    return {
+      content: [
+        {
+          text: `User created successfully:\nID: ${id}\nName: ${name}\nEmail: ${email}`,
+          type: "text",
+        },
+      ],
+    };
+  },
+  name: "create_user",
+  parameters: z.object({
+    email: z.string().email(),
+    name: z.string(),
+  }),
+});
+```
+
+## Supported HTTP Methods
+
+Custom routes support all standard HTTP methods:
+
+- `GET` - Retrieve data
+- `POST` - Create new resources
+- `PUT` - Update existing resources
+- `DELETE` - Delete resources
+- `PATCH` - Partial updates
+- `OPTIONS` - CORS preflight requests
+
+## Request and Response Helpers
+
+### Request
+
+```typescript
+server.addRoute("POST", "/api/example", async (req, res) => {
+  // Path parameters
+  const id = req.params.id;
+
+  // Query parameters
+  const query = req.query.search;
+
+  // Headers
+  const authHeader = req.headers.authorization;
+
+  // Parse JSON body
+  const body = await req.json();
+
+  // Parse text body
+  const text = await req.text();
+
+  // Full URL
+  const url = req.url;
+});
+```
+
+### Response
+
+```typescript
+server.addRoute("GET", "/api/example", async (req, res) => {
+  // JSON response
+  res.json({ message: "Hello" });
+
+  // Text response
+  res.send("Hello, world!");
+
+  // HTML response
+  res.send("<h1>Hello</h1>");
+
+  // Custom status code
+  res.status(201).json({ created: true });
+
+  // Custom headers
+  res.setHeader("X-Custom-Header", "value");
+  res.json({ message: "Hello" });
+});
+```
+
+## Complete Example
+
+Here's a complete example from the FastMCP repository showing custom routes with authentication, public endpoints, and MCP integration:
+
+```typescript src/examples/custom-routes.ts
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  authenticate: async (req) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader === "Bearer admin-token") {
+      return { role: "admin", userId: "admin" };
+    } else if (authHeader === "Bearer user-token") {
+      return { role: "user", userId: "user1" };
+    }
+    throw new Error("Invalid or missing authentication");
+  },
+  name: "custom-routes-example",
+  version: "1.0.0",
+});
+
+const app = server.getApp();
+const users = new Map();
+
+// Public routes
+app.get("/status", async (c) => {
+  return c.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Private routes (require authentication)
+app.get("/api/users", async (c) => {
+  const auth = await getAuth(c);
+  if (!auth) {
+    return c.json({ error: "Authentication required" }, 401);
+  }
+
+  const userList = Array.from(users.values());
+  return c.json({
+    authenticated_as: auth.userId,
+    users: userList,
+  });
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: { port: 8080 },
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Learn how to protect custom routes with authentication
+  </Card>
+  <Card title="Edge Runtime" icon="cloud" href="/features/edge-runtime">
+    Deploy custom routes to Cloudflare Workers
+  </Card>
+</CardGroup>

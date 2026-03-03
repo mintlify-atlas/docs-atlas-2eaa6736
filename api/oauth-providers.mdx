@@ -1,0 +1,341 @@
+---
+title: OAuth Providers
+description: Pre-configured OAuth providers for common identity platforms
+---
+
+FastMCP includes built-in OAuth providers for popular identity platforms: Google, GitHub, Azure/Entra ID, and a generic provider for custom OAuth servers.
+
+## GoogleProvider
+
+Pre-configured OAuth provider for Google Identity Platform.
+
+```typescript
+import { FastMCP, GoogleProvider } from "fastmcp";
+
+const server = new FastMCP({
+  name: "google-auth-server",
+  version: "1.0.0",
+  auth: new GoogleProvider({
+    baseUrl: "http://localhost:8000",
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  }),
+});
+```
+
+### Configuration
+
+<ParamField path="baseUrl" type="string" required>
+  Base URL where the MCP server is accessible (e.g., "https://api.example.com")
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  Google OAuth 2.0 client ID from Google Cloud Console
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  Google OAuth 2.0 client secret from Google Cloud Console
+</ParamField>
+
+<ParamField path="scopes" type="string[]" default='["openid", "profile", "email"]'>
+  OAuth scopes to request
+</ParamField>
+
+<ParamField path="consentRequired" type="boolean" default="true">
+  Require user consent screen
+</ParamField>
+
+<ParamField path="allowedRedirectUriPatterns" type="string[]" default='["http://localhost:*", "https://*"]'>
+  Allowed redirect URI patterns for client registration
+</ParamField>
+
+<ParamField path="encryptionKey" type="string | false">
+  Encryption key for token storage (auto-generated if not provided, set to false to disable)
+</ParamField>
+
+<ParamField path="jwtSigningKey" type="string">
+  JWT signing key for token swap (auto-generated if not provided)
+</ParamField>
+
+<ParamField path="tokenStorage" type="TokenStorage">
+  Custom token storage backend (defaults to MemoryTokenStorage)
+</ParamField>
+
+### Session Type
+
+```typescript
+interface GoogleSession extends OAuthSession {
+  accessToken: string;
+  scopes?: string[];
+  expiresAt?: number;
+  idToken?: string;
+  refreshToken?: string;
+  claims?: Record<string, unknown>;
+  email?: string; // Google-specific
+}
+```
+
+### Endpoints
+
+- **Authorization**: `https://accounts.google.com/o/oauth2/v2/auth`
+- **Token**: `https://oauth2.googleapis.com/token`
+- **Callback**: `{baseUrl}/oauth/callback`
+
+## GitHubProvider
+
+Pre-configured OAuth provider for GitHub OAuth Apps.
+
+```typescript
+import { FastMCP, GitHubProvider } from "fastmcp";
+
+const server = new FastMCP({
+  name: "github-auth-server",
+  version: "1.0.0",
+  auth: new GitHubProvider({
+    baseUrl: "http://localhost:8000",
+    clientId: process.env.GITHUB_CLIENT_ID!,
+    clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+  }),
+});
+```
+
+### Configuration
+
+<ParamField path="baseUrl" type="string" required>
+  Base URL where the MCP server is accessible
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  GitHub OAuth App client ID from GitHub Developer Settings
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  GitHub OAuth App client secret
+</ParamField>
+
+<ParamField path="scopes" type="string[]" default='["read:user", "user:email"]'>
+  OAuth scopes to request
+</ParamField>
+
+<ParamField path="consentRequired" type="boolean" default="true">
+  Require user consent screen
+</ParamField>
+
+<ParamField path="allowedRedirectUriPatterns" type="string[]" default='["http://localhost:*", "https://*"]'>
+  Allowed redirect URI patterns
+</ParamField>
+
+<ParamField path="encryptionKey" type="string | false">
+  Encryption key for token storage
+</ParamField>
+
+<ParamField path="jwtSigningKey" type="string">
+  JWT signing key for token swap
+</ParamField>
+
+<ParamField path="tokenStorage" type="TokenStorage">
+  Custom token storage backend
+</ParamField>
+
+### Session Type
+
+```typescript
+interface GitHubSession extends OAuthSession {
+  accessToken: string;
+  scopes?: string[];
+  expiresAt?: number;
+  idToken?: string;
+  refreshToken?: string;
+  claims?: Record<string, unknown>;
+  username?: string; // GitHub-specific
+}
+```
+
+### Endpoints
+
+- **Authorization**: `https://github.com/login/oauth/authorize`
+- **Token**: `https://github.com/login/oauth/access_token`
+- **Callback**: `{baseUrl}/oauth/callback`
+
+## AzureProvider
+
+Pre-configured OAuth provider for Microsoft Azure AD / Entra ID.
+
+```typescript
+import { FastMCP, AzureProvider } from "fastmcp";
+
+const server = new FastMCP({
+  name: "azure-auth-server",
+  version: "1.0.0",
+  auth: new AzureProvider({
+    baseUrl: "http://localhost:8000",
+    clientId: process.env.AZURE_CLIENT_ID!,
+    clientSecret: process.env.AZURE_CLIENT_SECRET!,
+    tenantId: "common", // or specific tenant ID
+  }),
+});
+```
+
+### Configuration
+
+<ParamField path="baseUrl" type="string" required>
+  Base URL where the MCP server is accessible
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  Azure AD application (client) ID from Azure Portal
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  Azure AD client secret (value, not secret ID)
+</ParamField>
+
+<ParamField path="tenantId" type="string" default="common">
+  Azure AD tenant ID or "common" / "organizations" / "consumers"
+</ParamField>
+
+<ParamField path="scopes" type="string[]" default='["openid", "profile", "email"]'>
+  OAuth scopes to request
+</ParamField>
+
+<ParamField path="consentRequired" type="boolean" default="true">
+  Require user consent screen
+</ParamField>
+
+<ParamField path="allowedRedirectUriPatterns" type="string[]" default='["http://localhost:*", "https://*"]'>
+  Allowed redirect URI patterns
+</ParamField>
+
+<ParamField path="encryptionKey" type="string | false">
+  Encryption key for token storage
+</ParamField>
+
+<ParamField path="jwtSigningKey" type="string">
+  JWT signing key for token swap
+</ParamField>
+
+<ParamField path="tokenStorage" type="TokenStorage">
+  Custom token storage backend
+</ParamField>
+
+### Session Type
+
+```typescript
+interface AzureSession extends OAuthSession {
+  accessToken: string;
+  scopes?: string[];
+  expiresAt?: number;
+  idToken?: string;
+  refreshToken?: string;
+  claims?: Record<string, unknown>;
+  upn?: string; // Azure-specific (User Principal Name)
+}
+```
+
+### Endpoints
+
+- **Authorization**: `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/authorize`
+- **Token**: `https://login.microsoftonline.com/{tenantId}/oauth2/v2.0/token`
+- **Callback**: `{baseUrl}/oauth/callback`
+
+## OAuthProvider
+
+Generic OAuth provider for any OAuth 2.0 compliant authorization server.
+
+```typescript
+import { FastMCP, OAuthProvider } from "fastmcp";
+
+const server = new FastMCP({
+  name: "custom-oauth-server",
+  version: "1.0.0",
+  auth: new OAuthProvider({
+    baseUrl: "http://localhost:8000",
+    clientId: process.env.OAUTH_CLIENT_ID!,
+    clientSecret: process.env.OAUTH_CLIENT_SECRET!,
+    authorizationEndpoint: "https://auth.example.com/oauth/authorize",
+    tokenEndpoint: "https://auth.example.com/oauth/token",
+    scopes: ["read", "write"],
+  }),
+});
+```
+
+### Configuration
+
+<ParamField path="baseUrl" type="string" required>
+  Base URL where the MCP server is accessible
+</ParamField>
+
+<ParamField path="clientId" type="string" required>
+  OAuth client ID from your provider
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  OAuth client secret from your provider
+</ParamField>
+
+<ParamField path="authorizationEndpoint" type="string" required>
+  OAuth authorization endpoint URL (e.g., "https://provider.com/oauth/authorize")
+</ParamField>
+
+<ParamField path="tokenEndpoint" type="string" required>
+  OAuth token endpoint URL (e.g., "https://provider.com/oauth/token")
+</ParamField>
+
+<ParamField path="scopes" type="string[]" default='["openid"]'>
+  OAuth scopes to request
+</ParamField>
+
+<ParamField path="tokenEndpointAuthMethod" type="'client_secret_basic' | 'client_secret_post'" default="client_secret_basic">
+  Token endpoint authentication method
+</ParamField>
+
+<ParamField path="consentRequired" type="boolean" default="true">
+  Require user consent screen
+</ParamField>
+
+<ParamField path="allowedRedirectUriPatterns" type="string[]" default='["http://localhost:*", "https://*"]'>
+  Allowed redirect URI patterns
+</ParamField>
+
+<ParamField path="encryptionKey" type="string | false">
+  Encryption key for token storage
+</ParamField>
+
+<ParamField path="jwtSigningKey" type="string">
+  JWT signing key for token swap
+</ParamField>
+
+<ParamField path="tokenStorage" type="TokenStorage">
+  Custom token storage backend
+</ParamField>
+
+### Session Type
+
+```typescript
+interface OAuthSession {
+  accessToken: string;
+  scopes?: string[];
+  expiresAt?: number;
+  idToken?: string;
+  refreshToken?: string;
+  claims?: Record<string, unknown>;
+}
+```
+
+## Usage with Tools
+
+Access the authenticated session in your tools:
+
+```typescript
+import { requireAuth } from "fastmcp";
+
+server.addTool({
+  name: "get_profile",
+  description: "Get user profile",
+  canAccess: requireAuth,
+  execute: async (args, context) => {
+    const session = context.session; // GoogleSession | GitHubSession | etc.
+    return `User: ${session.email || session.username}`;
+  },
+});
+```

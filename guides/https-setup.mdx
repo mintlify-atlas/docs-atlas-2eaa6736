@@ -1,0 +1,349 @@
+---
+title: HTTPS setup
+description: Configure HTTPS with SSL certificates for secure connections
+---
+
+FastMCP supports HTTPS for secure connections by providing SSL certificate options. This guide covers setting up HTTPS for development and production.
+
+## Quick start
+
+Enable HTTPS by providing SSL certificate options:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8443,
+    sslCert: "./path/to/cert.pem",
+    sslKey: "./path/to/key.pem",
+    sslCa: "./path/to/ca.pem", // Optional: for client certificate authentication
+  },
+});
+```
+
+The server will start with HTTPS on `https://localhost:8443/mcp`.
+
+## SSL options
+
+<ParamField path="sslCert" type="string" required>
+  Path to the SSL certificate file (PEM format)
+</ParamField>
+
+<ParamField path="sslKey" type="string" required>
+  Path to the SSL private key file (PEM format)
+</ParamField>
+
+<ParamField path="sslCa" type="string">
+  Path to the CA certificate for mutual TLS authentication (optional)
+</ParamField>
+
+## Development setup
+
+For local development and testing, you can generate self-signed certificates:
+
+<Steps>
+  <Step title="Generate self-signed certificates">
+    Use OpenSSL to create a self-signed certificate:
+
+    ```bash
+    openssl req -x509 -newkey rsa:2048 \
+      -keyout key.pem \
+      -out cert.pem \
+      -days 365 \
+      -nodes \
+      -subj "/CN=localhost"
+    ```
+
+    This creates:
+    - `key.pem` - Private key
+    - `cert.pem` - Self-signed certificate valid for 365 days
+  </Step>
+
+  <Step title="Configure your server">
+    ```typescript
+    import { FastMCP } from "fastmcp";
+    import { fileURLToPath } from "url";
+    import { dirname, join } from "path";
+
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+
+    const server = new FastMCP({
+      name: "HTTPS Dev Server",
+      version: "1.0.0",
+    });
+
+    server.addTool({
+      name: "greet",
+      description: "Say hello",
+      execute: async () => "Hello from HTTPS!",
+    });
+
+    server.start({
+      transportType: "httpStream",
+      httpStream: {
+        port: 8443,
+        sslCert: join(__dirname, "cert.pem"),
+        sslKey: join(__dirname, "key.pem"),
+      },
+    });
+
+    console.log("Server running at https://localhost:8443/mcp");
+    ```
+  </Step>
+
+  <Step title="Accept self-signed certificate">
+    When connecting from a client, you'll need to accept the self-signed certificate warning. This is normal for development.
+
+    <Warning>
+      Never use self-signed certificates in production. They don't provide proper authentication and are vulnerable to man-in-the-middle attacks.
+    </Warning>
+  </Step>
+</Steps>
+
+## Production setup
+
+For production, use certificates from a trusted Certificate Authority (CA).
+
+### Using Let's Encrypt
+
+Let's Encrypt provides free SSL certificates:
+
+<Steps>
+  <Step title="Install Certbot">
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get update
+    sudo apt-get install certbot
+
+    # macOS
+    brew install certbot
+    ```
+  </Step>
+
+  <Step title="Obtain certificate">
+    ```bash
+    sudo certbot certonly --standalone \
+      -d your-domain.com \
+      -d www.your-domain.com
+    ```
+
+    Certificates will be saved to:
+    - `/etc/letsencrypt/live/your-domain.com/fullchain.pem` (certificate)
+    - `/etc/letsencrypt/live/your-domain.com/privkey.pem` (private key)
+  </Step>
+
+  <Step title="Configure server">
+    ```typescript
+    server.start({
+      transportType: "httpStream",
+      httpStream: {
+        port: 443,
+        sslCert: "/etc/letsencrypt/live/your-domain.com/fullchain.pem",
+        sslKey: "/etc/letsencrypt/live/your-domain.com/privkey.pem",
+      },
+    });
+    ```
+  </Step>
+
+  <Step title="Set up auto-renewal">
+    Let's Encrypt certificates expire after 90 days. Set up automatic renewal:
+
+    ```bash
+    # Add to crontab
+    sudo crontab -e
+
+    # Add this line to renew twice daily
+    0 0,12 * * * certbot renew --quiet --post-hook "systemctl restart your-service"
+    ```
+  </Step>
+</Steps>
+
+### Using commercial certificates
+
+If you have certificates from a commercial CA (DigiCert, GlobalSign, etc.):
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 443,
+    sslCert: "/path/to/certificate.crt",
+    sslKey: "/path/to/private.key",
+    sslCa: "/path/to/ca-bundle.crt", // If provided by CA
+  },
+});
+```
+
+## Mutual TLS (mTLS)
+
+For enhanced security, require clients to present valid certificates:
+
+<Steps>
+  <Step title="Generate client certificates">
+    ```bash
+    # Create a CA
+    openssl req -x509 -new -nodes -key ca-key.pem -sha256 -days 365 -out ca.pem
+
+    # Create client certificate
+    openssl req -new -key client-key.pem -out client.csr
+    openssl x509 -req -in client.csr -CA ca.pem -CAkey ca-key.pem -CAcreateserial -out client-cert.pem -days 365
+    ```
+  </Step>
+
+  <Step title="Configure server with CA">
+    ```typescript
+    server.start({
+      transportType: "httpStream",
+      httpStream: {
+        port: 8443,
+        sslCert: "./server-cert.pem",
+        sslKey: "./server-key.pem",
+        sslCa: "./ca.pem", // CA that signed client certificates
+      },
+    });
+    ```
+  </Step>
+
+  <Step title="Connect with client certificate">
+    Clients must present a certificate signed by the specified CA to connect.
+  </Step>
+</Steps>
+
+## Complete example
+
+Here's a production-ready HTTPS server with proper error handling:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+import { readFileSync } from "fs";
+
+const server = new FastMCP({
+  name: "Secure MCP Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "secureData",
+  description: "Access secure data",
+  parameters: z.object({
+    query: z.string(),
+  }),
+  execute: async (args) => {
+    return `Secure response for: ${args.query}`;
+  },
+});
+
+try {
+  // Verify certificates exist and are readable
+  readFileSync(process.env.SSL_CERT_PATH!);
+  readFileSync(process.env.SSL_KEY_PATH!);
+
+  server.start({
+    transportType: "httpStream",
+    httpStream: {
+      port: Number(process.env.PORT) || 443,
+      sslCert: process.env.SSL_CERT_PATH!,
+      sslKey: process.env.SSL_KEY_PATH!,
+      sslCa: process.env.SSL_CA_PATH, // Optional
+    },
+  });
+
+  console.log(`Secure server running on port ${process.env.PORT || 443}`);
+} catch (error) {
+  console.error("Failed to start HTTPS server:", error);
+  process.exit(1);
+}
+```
+
+## Security best practices
+
+<Steps>
+  <Step title="Use strong cipher suites">
+    Configure Node.js to use strong cipher suites:
+
+    ```bash
+    export NODE_OPTIONS="--tls-cipher-list=ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256"
+    ```
+  </Step>
+
+  <Step title="Keep certificates secure">
+    - Store private keys with restricted permissions (chmod 600)
+    - Never commit certificates to version control
+    - Use environment variables for certificate paths
+    - Consider using a secrets management service (AWS Secrets Manager, HashiCorp Vault)
+  </Step>
+
+  <Step title="Enable HSTS">
+    Force HTTPS connections using HTTP Strict Transport Security:
+
+    ```typescript
+    server.addRoute("GET", "/*", async (req, res) => {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    });
+    ```
+  </Step>
+
+  <Step title="Monitor certificate expiration">
+    Set up alerts to renew certificates before they expire:
+
+    ```bash
+    # Check certificate expiration
+    openssl x509 -enddate -noout -in cert.pem
+    ```
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<Accordion title="Error: ENOENT - Certificate file not found">
+  Verify the file paths are correct and the files exist:
+  
+  ```bash
+  ls -la /path/to/cert.pem
+  ls -la /path/to/key.pem
+  ```
+</Accordion>
+
+<Accordion title="Error: ERR_SSL_PROTOCOL_ERROR">
+  This usually means:
+  - The certificate and key don't match
+  - The certificate is invalid or expired
+  - Wrong certificate format (should be PEM)
+  
+  Verify certificate and key match:
+  
+  ```bash
+  openssl x509 -noout -modulus -in cert.pem | openssl md5
+  openssl rsa -noout -modulus -in key.pem | openssl md5
+  ```
+  
+  The MD5 hashes should match.
+</Accordion>
+
+<Accordion title="Self-signed certificate warnings">
+  Browsers and clients will warn about self-signed certificates. For development:
+  - Accept the warning (temporary)
+  - Add certificate to system trust store (better)
+  
+  For production, always use certificates from a trusted CA.
+</Accordion>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Production Deployment" icon="rocket" href="/deployment/production">
+    Learn about production deployment best practices
+  </Card>
+  <Card title="Authentication" icon="lock" href="/features/authentication">
+    Add authentication to your HTTPS server
+  </Card>
+</CardGroup>

@@ -1,0 +1,347 @@
+---
+title: EdgeFastMCP
+description: Edge runtime-compatible MCP server for Cloudflare Workers, Deno Deploy, and Bun
+---
+
+The `EdgeFastMCP` class provides edge runtime compatibility for FastMCP, enabling deployment to Cloudflare Workers, Deno Deploy, and other edge platforms. It uses only web-standard APIs (no Node.js dependencies).
+
+## Constructor
+
+Create a new EdgeFastMCP server instance.
+
+```typescript
+import { EdgeFastMCP } from "fastmcp/edge";
+
+const server = new EdgeFastMCP({
+  name: "my-edge-server",
+  version: "1.0.0",
+});
+```
+
+<ParamField path="name" type="string" required>
+  Server name identifier
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  Semantic version string (e.g., "1.0.0")
+</ParamField>
+
+<ParamField path="description" type="string">
+  Server description
+</ParamField>
+
+<ParamField path="logger" type="EdgeLogger">
+  Custom logger instance (defaults to console)
+</ParamField>
+
+<ParamField path="mcpPath" type="string" default="/mcp">
+  Base path for MCP endpoints
+</ParamField>
+
+## Methods
+
+### addTool()
+
+Register a tool that can be called by the MCP client.
+
+```typescript
+import { z } from "zod";
+
+server.addTool({
+  name: "get_time",
+  description: "Get current time",
+  parameters: z.object({
+    timezone: z.string().optional(),
+  }),
+  execute: async ({ timezone }) => {
+    return new Date().toLocaleString("en-US", { timeZone: timezone });
+  },
+});
+```
+
+<ParamField path="tool" type="EdgeTool" required>
+  Tool configuration object
+
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Unique tool identifier
+    </ParamField>
+
+    <ParamField path="description" type="string" required>
+      Human-readable tool description
+    </ParamField>
+
+    <ParamField path="parameters" type="StandardSchemaV1 | z.ZodType">
+      Parameter schema (Zod or Standard Schema)
+    </ParamField>
+
+    <ParamField path="execute" type="(params) => Promise<string | ContentResult>" required>
+      Tool execution function
+
+      ```typescript
+      execute: async (params) => {
+        // Return string
+        return "Simple text result";
+
+        // Or return content array
+        return {
+          content: [
+            { type: "text", text: "Result" },
+            { type: "image", data: base64Data, mimeType: "image/png" },
+          ],
+        };
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### addResource()
+
+Register a static resource.
+
+```typescript
+server.addResource({
+  uri: "edge://config",
+  name: "Configuration",
+  description: "Edge server config",
+  mimeType: "application/json",
+  load: async () => ({
+    text: JSON.stringify({ edge: true }),
+  }),
+});
+```
+
+<ParamField path="resource" type="EdgeResource" required>
+  Resource configuration object
+
+  <Expandable title="properties">
+    <ParamField path="uri" type="string" required>
+      Unique resource identifier (URI)
+    </ParamField>
+
+    <ParamField path="name" type="string" required>
+      Resource display name
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Human-readable resource description
+    </ParamField>
+
+    <ParamField path="mimeType" type="string">
+      MIME type of the resource content
+    </ParamField>
+
+    <ParamField path="load" type="() => Promise<string | ResourceResult>" required>
+      Function that loads resource content
+
+      ```typescript
+      load: async () => {
+        // Return string
+        return "Resource content";
+
+        // Or return structured result
+        return {
+          text: "Text content",
+          mimeType: "text/plain",
+        };
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### addPrompt()
+
+Register a prompt template.
+
+```typescript
+server.addPrompt({
+  name: "summarize",
+  description: "Summarize text",
+  arguments: [
+    { name: "text", description: "Text to summarize", required: true },
+  ],
+  load: async ({ text }) => ({
+    messages: [
+      {
+        role: "user",
+        content: { type: "text", text: `Summarize: ${text}` },
+      },
+    ],
+  }),
+});
+```
+
+<ParamField path="prompt" type="EdgePrompt" required>
+  Prompt configuration object
+
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Unique prompt identifier
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Human-readable prompt description
+    </ParamField>
+
+    <ParamField path="arguments" type="Array<{name: string, description?: string, required?: boolean}>">
+      Prompt argument definitions
+    </ParamField>
+
+    <ParamField path="load" type="(args: Record<string, string>) => Promise<string | PromptMessages>" required>
+      Function that generates prompt messages
+
+      ```typescript
+      load: async (args) => {
+        // Return string
+        return "Simple prompt text";
+
+        // Or return message structure
+        return {
+          messages: [
+            {
+              role: "user",
+              content: { type: "text", text: "Prompt content" },
+            },
+          ],
+        };
+      }
+      ```
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### fetch()
+
+Handle incoming requests. This is the main entry point for edge runtimes.
+
+```typescript
+// Cloudflare Workers
+export default {
+  async fetch(request: Request): Promise<Response> {
+    return server.fetch(request);
+  },
+};
+
+// Deno Deploy
+Deno.serve((request) => server.fetch(request));
+
+// Bun
+Bun.serve({
+  fetch: (request) => server.fetch(request),
+  port: 8000,
+});
+```
+
+<ParamField path="request" type="Request" required>
+  Web API Request object
+</ParamField>
+
+<ResponseField name="response" type="Response">
+  Web API Response object
+</ResponseField>
+
+### getApp()
+
+Get the underlying Hono app instance for adding custom routes.
+
+```typescript
+const app = server.getApp();
+
+app.get("/health", (c) => c.text("OK"));
+app.post("/webhook", async (c) => {
+  const data = await c.req.json();
+  return c.json({ received: true });
+});
+```
+
+<ResponseField name="app" type="Hono">
+  Hono application instance
+</ResponseField>
+
+## Differences from FastMCP
+
+EdgeFastMCP is a simplified implementation optimized for edge environments:
+
+- **No Node.js dependencies**: Uses only web-standard APIs
+- **Stateless**: No session management or persistent connections
+- **Simplified authentication**: No built-in OAuth support
+- **No stdio transport**: Only HTTP-based protocols
+- **Limited features**: No resource templates, completions, or sampling
+
+## Deployment Examples
+
+### Cloudflare Workers
+
+```typescript
+import { EdgeFastMCP } from "fastmcp/edge";
+import { z } from "zod";
+
+const server = new EdgeFastMCP({
+  name: "cloudflare-mcp",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "kv_get",
+  description: "Get value from KV",
+  parameters: z.object({ key: z.string() }),
+  execute: async ({ key }, env) => {
+    const value = await env.MY_KV.get(key);
+    return value || "Not found";
+  },
+});
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    return server.fetch(request);
+  },
+};
+```
+
+### Deno Deploy
+
+```typescript
+import { EdgeFastMCP } from "npm:fastmcp/edge";
+
+const server = new EdgeFastMCP({
+  name: "deno-mcp",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "env_get",
+  description: "Get environment variable",
+  execute: async ({ key }) => {
+    return Deno.env.get(key) || "Not set";
+  },
+});
+
+Deno.serve((request) => server.fetch(request));
+```
+
+### Bun
+
+```typescript
+import { EdgeFastMCP } from "fastmcp/edge";
+
+const server = new EdgeFastMCP({
+  name: "bun-mcp",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "hash",
+  description: "Hash a string",
+  execute: async ({ text }) => {
+    const hash = Bun.hash(text);
+    return hash.toString();
+  },
+});
+
+Bun.serve({
+  fetch: (request) => server.fetch(request),
+  port: 8000,
+});
+```

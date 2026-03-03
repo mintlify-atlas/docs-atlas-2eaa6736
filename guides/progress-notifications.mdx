@@ -1,0 +1,331 @@
+---
+title: Progress notifications
+description: Report progress for long-running operations to provide real-time feedback
+---
+
+Progress notifications allow tools to report their progress during execution, providing real-time feedback for long-running operations.
+
+## Basic usage
+
+Use the `reportProgress` function from the context object:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "download",
+  description: "Download a large file",
+  parameters: z.object({
+    url: z.string().url(),
+  }),
+  execute: async (args, { reportProgress }) => {
+    // Report initial progress
+    await reportProgress({
+      progress: 0,
+      total: 100,
+    });
+
+    // Simulate download progress
+    for (let i = 0; i <= 100; i += 10) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await reportProgress({
+        progress: i,
+        total: 100,
+      });
+    }
+
+    return "Download complete!";
+  },
+});
+```
+
+## Progress with known total
+
+When you know the total number of items or bytes:
+
+```typescript
+server.addTool({
+  name: "processFiles",
+  description: "Process multiple files",
+  parameters: z.object({
+    files: z.array(z.string()),
+  }),
+  execute: async (args, { reportProgress }) => {
+    const total = args.files.length;
+    const results = [];
+
+    for (let i = 0; i < total; i++) {
+      // Process each file
+      const file = args.files[i];
+      const result = await processFile(file);
+      results.push(result);
+
+      // Report progress
+      await reportProgress({
+        progress: i + 1,
+        total,
+      });
+    }
+
+    return `Processed ${total} files successfully`;
+  },
+});
+```
+
+## Progress with bytes
+
+Report progress for file operations using bytes:
+
+```typescript
+server.addTool({
+  name: "uploadFile",
+  description: "Upload a file with progress tracking",
+  parameters: z.object({
+    filePath: z.string(),
+    destination: z.string().url(),
+  }),
+  execute: async (args, { reportProgress }) => {
+    const fileSize = await getFileSize(args.filePath);
+    let uploadedBytes = 0;
+
+    // Create upload stream with progress tracking
+    const stream = createReadStream(args.filePath);
+    stream.on("data", async (chunk) => {
+      uploadedBytes += chunk.length;
+      await reportProgress({
+        progress: uploadedBytes,
+        total: fileSize,
+      });
+    });
+
+    await uploadToDestination(stream, args.destination);
+    return `Uploaded ${fileSize} bytes successfully`;
+  },
+});
+```
+
+## Progress without known total
+
+For indeterminate operations, report progress as a percentage:
+
+```typescript
+server.addTool({
+  name: "analyzeData",
+  description: "Analyze data with unknown duration",
+  parameters: z.object({
+    dataSource: z.string(),
+  }),
+  execute: async (args, { reportProgress }) => {
+    await reportProgress({ progress: 0, total: 100 });
+
+    // Phase 1: Loading
+    await loadData(args.dataSource);
+    await reportProgress({ progress: 33, total: 100 });
+
+    // Phase 2: Processing
+    await processData();
+    await reportProgress({ progress: 66, total: 100 });
+
+    // Phase 3: Finalizing
+    const result = await finalizeResults();
+    await reportProgress({ progress: 100, total: 100 });
+
+    return result;
+  },
+});
+```
+
+## Combining with logging
+
+Provide both progress updates and detailed logs:
+
+```typescript
+server.addTool({
+  name: "batchProcess",
+  description: "Process items in batches with logging",
+  parameters: z.object({
+    items: z.array(z.string()),
+    batchSize: z.number().default(10),
+  }),
+  execute: async (args, { reportProgress, log }) => {
+    const total = args.items.length;
+    let processed = 0;
+
+    log.info("Starting batch processing", {
+      totalItems: total,
+      batchSize: args.batchSize,
+    });
+
+    // Process in batches
+    for (let i = 0; i < total; i += args.batchSize) {
+      const batch = args.items.slice(i, i + args.batchSize);
+      
+      log.debug(`Processing batch ${Math.floor(i / args.batchSize) + 1}`, {
+        batchStart: i,
+        batchSize: batch.length,
+      });
+
+      await processBatch(batch);
+      processed += batch.length;
+
+      // Report progress
+      await reportProgress({
+        progress: processed,
+        total,
+      });
+    }
+
+    log.info("Batch processing complete", { totalProcessed: processed });
+    return `Successfully processed ${processed} items`;
+  },
+});
+```
+
+## Progress with streaming
+
+Combine progress with streaming output:
+
+```typescript
+server.addTool({
+  name: "generateReport",
+  description: "Generate a report with progress and streaming",
+  parameters: z.object({
+    reportType: z.string(),
+  }),
+  annotations: {
+    streamingHint: true,
+  },
+  execute: async (args, { reportProgress, streamContent }) => {
+    const sections = ["Introduction", "Data Analysis", "Conclusions"];
+    const total = sections.length;
+
+    for (let i = 0; i < total; i++) {
+      // Report progress
+      await reportProgress({
+        progress: i,
+        total,
+      });
+
+      // Stream section content
+      const content = await generateSection(sections[i]);
+      await streamContent({
+        type: "text",
+        text: `## ${sections[i]}\n\n${content}\n\n`,
+      });
+    }
+
+    // Final progress
+    await reportProgress({
+      progress: total,
+      total,
+    });
+
+    return "Report generation complete";
+  },
+});
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Update progress regularly">
+    Update progress frequently enough to provide smooth feedback, but not so often that it impacts performance.
+
+    ```typescript
+    // Good: Update every 1%
+    if (processed % Math.ceil(total / 100) === 0) {
+      await reportProgress({ progress: processed, total });
+    }
+
+    // Bad: Update on every iteration (too frequent)
+    await reportProgress({ progress: processed++, total });
+    ```
+  </Step>
+
+  <Step title="Always report completion">
+    Always report 100% progress when the operation completes.
+
+    ```typescript
+    try {
+      // ... processing ...
+      await reportProgress({ progress: total, total });
+      return "Complete";
+    } catch (error) {
+      // Don't report completion on error
+      throw error;
+    }
+    ```
+  </Step>
+
+  <Step title="Use meaningful units">
+    Choose progress units that make sense for your operation (items, bytes, percentage).
+
+    ```typescript
+    // Files: use item count
+    await reportProgress({ progress: filesProcessed, total: totalFiles });
+
+    // Downloads: use bytes
+    await reportProgress({ progress: bytesDownloaded, total: fileSize });
+
+    // Unknown duration: use percentage
+    await reportProgress({ progress: 50, total: 100 });
+    ```
+  </Step>
+
+  <Step title="Handle errors gracefully">
+    Don't report progress if an error occurs.
+
+    ```typescript
+    let processed = 0;
+    try {
+      for (const item of items) {
+        await processItem(item);
+        processed++;
+        await reportProgress({ progress: processed, total: items.length });
+      }
+    } catch (error) {
+      // Progress stops at failure point
+      throw new UserError(`Failed after processing ${processed} items`);
+    }
+    ```
+  </Step>
+</Steps>
+
+## Performance considerations
+
+<Warning>
+  Calling `reportProgress` too frequently can impact performance. Batch your progress updates for optimal performance.
+</Warning>
+
+```typescript
+// Efficient: Update progress in batches
+let processed = 0;
+const updateInterval = Math.ceil(total / 100); // Update every 1%
+
+for (let i = 0; i < total; i++) {
+  await processItem(items[i]);
+  processed++;
+
+  // Only update progress every 1%
+  if (processed % updateInterval === 0 || processed === total) {
+    await reportProgress({ progress: processed, total });
+  }
+}
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Streaming Output" icon="stream" href="/features/streaming">
+    Learn about streaming partial results
+  </Card>
+  <Card title="Logging" icon="file-lines" href="/features/logging">
+    Add detailed logging to your tools
+  </Card>
+</CardGroup>

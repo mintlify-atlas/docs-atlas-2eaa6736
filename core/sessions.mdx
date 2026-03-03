@@ -1,0 +1,471 @@
+---
+title: Sessions
+description: Understand session lifecycle, events, and context management in FastMCP
+---
+
+## What are Sessions?
+
+Sessions in FastMCP represent a connection between a client and your MCP server. Each session has its own lifecycle, authentication context, and event stream. Understanding sessions is crucial for building stateful MCP servers.
+
+## Session Lifecycle
+
+A session goes through several stages:
+
+1. **Connection** - Client connects to the server
+2. **Ready** - Session is initialized and ready to handle requests
+3. **Active** - Session is processing requests
+4. **Disconnect** - Client disconnects or connection is lost
+
+## Session Events
+
+Listen to session events to track connections and manage state:
+
+### Connect Event
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.on("connect", (event) => {
+  const { session } = event;
+  
+  console.log("Client connected");
+  console.log("Session ID:", session.sessionId);
+  console.log("Client version:", session.clientVersion);
+});
+```
+
+### Disconnect Event
+
+```typescript
+server.on("disconnect", (event) => {
+  const { session } = event;
+  
+  console.log("Client disconnected");
+  console.log("Session ID:", session.sessionId);
+});
+```
+
+### Ready Event
+
+```typescript
+server.on("connect", (event) => {
+  const { session } = event;
+  
+  session.on("ready", () => {
+    console.log("Session is ready to handle requests");
+  });
+});
+```
+
+### Error Event
+
+```typescript
+server.on("connect", (event) => {
+  const { session } = event;
+  
+  session.on("error", (event) => {
+    console.error("Session error:", event.error);
+  });
+});
+```
+
+## Session Context
+
+The session context is available in tool execution, resource loading, and prompt generation:
+
+### In Tools
+
+```typescript
+import { z } from "zod";
+
+server.addTool({
+  name: "whoami",
+  description: "Get current user information",
+  execute: async (args, context) => {
+    if (!context.session) {
+      return "No session context available";
+    }
+    
+    const { session } = context;
+    
+    return `User ID: ${session.userId}\nUsername: ${session.username}\nRole: ${session.role}`;
+  },
+});
+```
+
+### In Resources
+
+```typescript
+server.addResource({
+  uri: "session://current-user",
+  name: "Current User Information",
+  mimeType: "application/json",
+  load: async (auth) => {
+    if (!auth) {
+      return {
+        text: JSON.stringify({ authenticated: false }),
+      };
+    }
+    
+    return {
+      text: JSON.stringify({
+        authenticated: true,
+        user: {
+          id: auth.userId,
+          username: auth.username,
+          role: auth.role,
+        },
+      }),
+    };
+  },
+});
+```
+
+### In Prompts
+
+```typescript
+server.addPrompt({
+  name: "personalized-greeting",
+  description: "Generate a personalized greeting",
+  load: async (args, auth) => {
+    if (!auth) {
+      return "Hello! Please authenticate to get a personalized greeting.";
+    }
+    
+    return `Hello ${auth.username}! You're logged in as a ${auth.role}.`;
+  },
+});
+```
+
+## Session IDs
+
+Session IDs help track individual client connections:
+
+### HTTP-based Transports
+
+For HTTP Stream and SSE transports, the session ID comes from the `Mcp-Session-Id` header:
+
+```typescript
+server.addTool({
+  name: "trackSession",
+  description: "Track session activity",
+  execute: async (args, context) => {
+    const { sessionId } = context;
+    
+    if (sessionId) {
+      // Track activity for this specific session
+      await logActivity(sessionId, "tool_called");
+    }
+    
+    return "Activity tracked";
+  },
+});
+```
+
+### Request IDs
+
+Track individual requests within a session:
+
+```typescript
+server.addTool({
+  name: "trackedOperation",
+  description: "An operation with request tracking",
+  execute: async (args, context) => {
+    const { requestId, sessionId } = context;
+    
+    console.log(`Processing request ${requestId} in session ${sessionId}`);
+    
+    return "Operation complete";
+  },
+});
+```
+
+## Authentication Context
+
+Define custom session authentication types:
+
+```typescript
+interface UserSession {
+  userId: string;
+  username: string;
+  role: "admin" | "user" | "guest";
+  permissions: string[];
+}
+
+const server = new FastMCP<UserSession>({
+  name: "My Server",
+  version: "1.0.0",
+  authenticate: async (request) => {
+    // For stdio transport (no request object)
+    if (!request) {
+      return {
+        userId: process.env.USER_ID || "default",
+        username: process.env.USERNAME || "Anonymous",
+        role: "guest",
+        permissions: ["read"],
+      };
+    }
+    
+    // For HTTP transports
+    const authHeader = request.headers["authorization"];
+    if (!authHeader?.startsWith("Bearer ")) {
+      throw new Response("Unauthorized", { status: 401 });
+    }
+    
+    const token = authHeader.substring(7);
+    const user = await validateToken(token);
+    
+    return {
+      userId: user.id,
+      username: user.name,
+      role: user.role,
+      permissions: user.permissions,
+    };
+  },
+});
+```
+
+## Roots Management
+
+Roots allow clients to provide filesystem-like root locations:
+
+### Accessing Roots
+
+```typescript
+server.on("connect", (event) => {
+  const { session } = event;
+  
+  // Access initial roots
+  console.log("Initial roots:", session.roots);
+  
+  // Listen for changes
+  session.on("rootsChanged", (event) => {
+    console.log("Roots updated:", event.roots);
+  });
+});
+```
+
+### Using Roots in Tools
+
+```typescript
+server.addTool({
+  name: "listRoots",
+  description: "List available root directories",
+  execute: async (args, context) => {
+    // Roots are available through the session
+    // This would need to be passed through context
+    // or stored in session state
+    
+    return "Roots listed";
+  },
+});
+```
+
+### Disabling Roots
+
+You can disable roots support:
+
+```typescript
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+  roots: {
+    enabled: false,
+  },
+});
+```
+
+<Note>
+Disabling roots is useful for better compatibility with clients that don't support the roots capability.
+</Note>
+
+## Session State Management
+
+Track state across multiple requests in a session:
+
+```typescript
+const sessionState = new Map<string, any>();
+
+server.on("connect", (event) => {
+  const { session } = event;
+  const sessionId = session.sessionId || "default";
+  
+  // Initialize session state
+  sessionState.set(sessionId, {
+    requestCount: 0,
+    startTime: Date.now(),
+  });
+});
+
+server.on("disconnect", (event) => {
+  const { session } = event;
+  const sessionId = session.sessionId || "default";
+  
+  // Clean up session state
+  sessionState.delete(sessionId);
+});
+
+server.addTool({
+  name: "getSessionStats",
+  description: "Get statistics for the current session",
+  execute: async (args, context) => {
+    const sessionId = context.sessionId || "default";
+    const state = sessionState.get(sessionId);
+    
+    if (!state) {
+      return "No session state found";
+    }
+    
+    state.requestCount++;
+    
+    return `Requests: ${state.requestCount}\nUptime: ${Date.now() - state.startTime}ms`;
+  },
+});
+```
+
+## Complete Example
+
+Here's a complete example showing session management:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+interface UserSession {
+  userId: string;
+  username: string;
+  role: "admin" | "user";
+  permissions: string[];
+  authenticatedAt: string;
+}
+
+const server = new FastMCP<UserSession>({
+  name: "Session Demo",
+  version: "1.0.0",
+  authenticate: async (request) => {
+    if (!request) {
+      // stdio transport
+      return {
+        userId: "local-user",
+        username: "Local User",
+        role: "user",
+        permissions: ["read", "write"],
+        authenticatedAt: new Date().toISOString(),
+      };
+    }
+    
+    // HTTP transport - validate token
+    const token = request.headers["authorization"]?.substring(7);
+    const user = await validateToken(token);
+    
+    return {
+      userId: user.id,
+      username: user.name,
+      role: user.role,
+      permissions: user.permissions,
+      authenticatedAt: new Date().toISOString(),
+    };
+  },
+});
+
+// Track active sessions
+const activeSessions = new Map();
+
+server.on("connect", (event) => {
+  const { session } = event;
+  const sessionId = session.sessionId || "stdio";
+  
+  console.log(`Session connected: ${sessionId}`);
+  
+  activeSessions.set(sessionId, {
+    connectedAt: Date.now(),
+    requestCount: 0,
+  });
+  
+  session.on("ready", () => {
+    console.log(`Session ready: ${sessionId}`);
+  });
+  
+  session.on("error", (event) => {
+    console.error(`Session error: ${sessionId}`, event.error);
+  });
+  
+  session.on("rootsChanged", (event) => {
+    console.log(`Roots changed: ${sessionId}`, event.roots);
+  });
+});
+
+server.on("disconnect", (event) => {
+  const { session } = event;
+  const sessionId = session.sessionId || "stdio";
+  
+  console.log(`Session disconnected: ${sessionId}`);
+  activeSessions.delete(sessionId);
+});
+
+server.addTool({
+  name: "whoami",
+  description: "Get current user information",
+  execute: async (args, context) => {
+    if (!context.session) {
+      return "No session context available";
+    }
+    
+    return `User: ${context.session.username}\nRole: ${context.session.role}\nPermissions: ${context.session.permissions.join(", ")}`;
+  },
+});
+
+server.addTool({
+  name: "sessionStats",
+  description: "Get session statistics",
+  execute: async (args, context) => {
+    const sessionId = context.sessionId || "stdio";
+    const stats = activeSessions.get(sessionId);
+    
+    if (!stats) {
+      return "Session not found";
+    }
+    
+    stats.requestCount++;
+    
+    const uptime = Date.now() - stats.connectedAt;
+    return `Session: ${sessionId}\nRequests: ${stats.requestCount}\nUptime: ${uptime}ms`;
+  },
+});
+```
+
+## API Reference
+
+### FastMCPSession Type
+
+```typescript
+interface FastMCPSession<T> {
+  sessionId?: string;
+  clientVersion?: string;
+  roots?: Root[];
+  on(event: "ready", listener: () => void): void;
+  on(event: "error", listener: (event: { error: Error }) => void): void;
+  on(event: "rootsChanged", listener: (event: { roots: Root[] }) => void): void;
+}
+```
+
+### Context Type
+
+```typescript
+type Context<T> = {
+  session: T | undefined;
+  sessionId?: string;
+  requestId?: string;
+  log: Logger;
+  reportProgress: (progress: Progress) => Promise<void>;
+  streamContent: (content: Content | Content[]) => Promise<void>;
+  client: {
+    version: string;
+  };
+};
+```

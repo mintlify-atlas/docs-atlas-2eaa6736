@@ -1,0 +1,559 @@
+---
+title: Utility Classes
+description: Utility classes for OAuth, JWT, PKCE, and token storage
+---
+
+FastMCP provides utility classes for authentication, token management, and OAuth flows.
+
+## JWTIssuer
+
+Issues and validates HS256-signed JWTs for the OAuth proxy.
+
+```typescript
+import { JWTIssuer } from "fastmcp";
+
+const issuer = new JWTIssuer({
+  issuer: "https://api.example.com",
+  audience: "https://api.example.com",
+  signingKey: process.env.JWT_SIGNING_KEY!,
+  accessTokenTtl: 3600,      // 1 hour
+  refreshTokenTtl: 2592000,  // 30 days
+});
+
+// Issue access token
+const accessToken = issuer.issueAccessToken(
+  "client-123",
+  ["read", "write"],
+  { role: "admin" },  // Additional claims
+);
+
+// Issue refresh token
+const refreshToken = issuer.issueRefreshToken(
+  "client-123",
+  ["read", "write"],
+);
+
+// Verify token
+const result = await issuer.verify(accessToken);
+if (result.valid) {
+  console.log("Claims:", result.claims);
+}
+```
+
+### Constructor
+
+<ParamField path="config" type="JWTIssuerConfig" required>
+  <Expandable title="properties">
+    <ParamField path="issuer" type="string" required>
+      Issuer identifier (iss claim)
+    </ParamField>
+
+    <ParamField path="audience" type="string" required>
+      Audience identifier (aud claim)
+    </ParamField>
+
+    <ParamField path="signingKey" type="string" required>
+      Secret key for signing tokens (HS256)
+    </ParamField>
+
+    <ParamField path="accessTokenTtl" type="number" default="3600">
+      Access token expiration in seconds
+    </ParamField>
+
+    <ParamField path="refreshTokenTtl" type="number" default="2592000">
+      Refresh token expiration in seconds (30 days)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Methods
+
+#### issueAccessToken()
+
+<ParamField path="clientId" type="string" required>
+  Client identifier
+</ParamField>
+
+<ParamField path="scope" type="string[]" required>
+  Token scopes
+</ParamField>
+
+<ParamField path="additionalClaims" type="Record<string, unknown>">
+  Custom claims to include in JWT
+</ParamField>
+
+<ParamField path="expiresIn" type="number">
+  Override default TTL (seconds)
+</ParamField>
+
+<ResponseField name="token" type="string">
+  HS256-signed JWT access token
+</ResponseField>
+
+#### issueRefreshToken()
+
+<ParamField path="clientId" type="string" required>
+  Client identifier
+</ParamField>
+
+<ParamField path="scope" type="string[]" required>
+  Token scopes
+</ParamField>
+
+<ParamField path="additionalClaims" type="Record<string, unknown>">
+  Custom claims to include in JWT
+</ParamField>
+
+<ParamField path="expiresIn" type="number">
+  Override default TTL (seconds)
+</ParamField>
+
+<ResponseField name="token" type="string">
+  HS256-signed JWT refresh token
+</ResponseField>
+
+#### verify()
+
+<ParamField path="token" type="string" required>
+  JWT token to verify
+</ParamField>
+
+<ResponseField name="result" type="TokenValidationResult">
+  ```typescript
+  interface TokenValidationResult {
+    valid: boolean;
+    claims?: JWTClaims;
+    error?: string;
+  }
+  ```
+</ResponseField>
+
+#### deriveKey() (static)
+
+Derive a signing key from a secret using PBKDF2.
+
+```typescript
+const derivedKey = await JWTIssuer.deriveKey("my-secret", 100000);
+```
+
+<ParamField path="secret" type="string" required>
+  Secret to derive key from
+</ParamField>
+
+<ParamField path="iterations" type="number" default="100000">
+  PBKDF2 iterations
+</ParamField>
+
+<ResponseField name="key" type="string">
+  Base64-encoded derived key
+</ResponseField>
+
+## JWKSVerifier
+
+Verifies JWTs using public keys from a JWKS endpoint.
+
+```typescript
+import { JWKSVerifier } from "fastmcp";
+
+const verifier = new JWKSVerifier({
+  jwksUri: "https://accounts.google.com/.well-known/jwks.json",
+  audience: "your-client-id",
+  issuer: "https://accounts.google.com",
+  cacheDuration: 3600000,    // 1 hour
+  cooldownDuration: 30000,   // 30 seconds
+});
+
+const result = await verifier.verify(idToken);
+if (result.valid) {
+  console.log("User:", result.claims?.sub);
+}
+```
+
+**Note:** Requires the `jose` package: `npm install jose`
+
+### Constructor
+
+<ParamField path="config" type="JWKSVerifierConfig" required>
+  <Expandable title="properties">
+    <ParamField path="jwksUri" type="string" required>
+      JWKS endpoint URL
+    </ParamField>
+
+    <ParamField path="audience" type="string">
+      Expected token audience
+    </ParamField>
+
+    <ParamField path="issuer" type="string">
+      Expected token issuer
+    </ParamField>
+
+    <ParamField path="cacheDuration" type="number" default="3600000">
+      Cache duration in milliseconds (1 hour)
+    </ParamField>
+
+    <ParamField path="cooldownDuration" type="number" default="30000">
+      Cooldown between refetches in milliseconds (30 seconds)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Methods
+
+#### verify()
+
+<ParamField path="token" type="string" required>
+  JWT token to verify
+</ParamField>
+
+<ResponseField name="result" type="TokenVerificationResult">
+  ```typescript
+  interface TokenVerificationResult {
+    valid: boolean;
+    claims?: Record<string, unknown>;
+    error?: string;
+  }
+  ```
+</ResponseField>
+
+#### refreshKeys()
+
+Force refresh of JWKS cache.
+
+```typescript
+await verifier.refreshKeys();
+```
+
+#### getJwksUri()
+
+Get the JWKS URI being used.
+
+```typescript
+const uri = verifier.getJwksUri();
+```
+
+## PKCEUtils
+
+PKCE (Proof Key for Code Exchange) utilities for OAuth 2.0.
+
+```typescript
+import { PKCEUtils } from "fastmcp";
+
+// Generate verifier and challenge
+const { verifier, challenge } = PKCEUtils.generatePair("S256");
+
+// Validate challenge
+const valid = PKCEUtils.validateChallenge(verifier, challenge, "S256");
+```
+
+### Static Methods
+
+#### generatePair()
+
+Generate a complete PKCE pair (verifier + challenge).
+
+<ParamField path="method" type="'S256' | 'plain'" default="S256">
+  Challenge method
+</ParamField>
+
+<ResponseField name="pair" type="PKCEPair">
+  ```typescript
+  interface PKCEPair {
+    verifier: string;   // Base64URL-encoded (43-128 chars)
+    challenge: string;  // Base64URL-encoded or plain
+  }
+  ```
+</ResponseField>
+
+#### generateVerifier()
+
+Generate a cryptographically secure code verifier.
+
+<ParamField path="length" type="number" default="128">
+  Verifier length (43-128 characters)
+</ParamField>
+
+<ResponseField name="verifier" type="string">
+  Base64URL-encoded random string
+</ResponseField>
+
+#### generateChallenge()
+
+Generate a code challenge from a verifier.
+
+<ParamField path="verifier" type="string" required>
+  Code verifier
+</ParamField>
+
+<ParamField path="method" type="'S256' | 'plain'" default="S256">
+  Challenge method
+</ParamField>
+
+<ResponseField name="challenge" type="string">
+  Base64URL-encoded challenge (S256) or verifier (plain)
+</ResponseField>
+
+#### validateChallenge()
+
+Validate a code verifier against a challenge.
+
+<ParamField path="verifier" type="string" required>
+  Code verifier to validate
+</ParamField>
+
+<ParamField path="challenge" type="string" required>
+  Expected challenge
+</ParamField>
+
+<ParamField path="method" type="string" required>
+  Challenge method used
+</ParamField>
+
+<ResponseField name="valid" type="boolean">
+  Whether verifier matches challenge
+</ResponseField>
+
+## ConsentManager
+
+Manages consent screens and cookie signing for OAuth flows.
+
+```typescript
+import { ConsentManager } from "fastmcp";
+
+const manager = new ConsentManager("signing-key-secret");
+
+// Create consent response
+const response = manager.createConsentResponse(transaction, "Google");
+
+// Sign consent cookie
+const cookie = manager.signConsentCookie({
+  transactionId: "trans-123",
+  clientName: "My App",
+  provider: "Google",
+  scope: ["openid", "profile"],
+  timestamp: Date.now(),
+});
+
+// Validate consent cookie
+const data = manager.validateConsentCookie(cookie);
+if (data) {
+  console.log("Valid consent:", data);
+}
+```
+
+### Constructor
+
+<ParamField path="signingKey" type="string" required>
+  Secret key for signing consent cookies
+</ParamField>
+
+### Methods
+
+#### createConsentResponse()
+
+<ParamField path="transaction" type="OAuthTransaction" required>
+  OAuth transaction
+</ParamField>
+
+<ParamField path="provider" type="string" required>
+  Provider name for display
+</ParamField>
+
+<ResponseField name="response" type="Response">
+  HTTP response with consent HTML
+</ResponseField>
+
+#### signConsentCookie()
+
+<ParamField path="data" type="ConsentData" required>
+  Consent data to sign
+</ParamField>
+
+<ResponseField name="cookie" type="string">
+  Signed cookie value
+</ResponseField>
+
+#### validateConsentCookie()
+
+<ParamField path="cookie" type="string" required>
+  Signed cookie value
+</ParamField>
+
+<ResponseField name="data" type="ConsentData | null">
+  Validated consent data or null if invalid/expired
+</ResponseField>
+
+## Token Storage
+
+Token storage backends for OAuth tokens and mappings.
+
+### MemoryTokenStorage
+
+In-memory token storage with TTL support.
+
+```typescript
+import { MemoryTokenStorage } from "fastmcp";
+
+const storage = new MemoryTokenStorage(60000); // Cleanup every 60s
+
+// Save value with TTL
+await storage.save("key", { data: "value" }, 3600); // 1 hour
+
+// Get value
+const value = await storage.get("key");
+
+// Delete value
+await storage.delete("key");
+
+// Manual cleanup
+await storage.cleanup();
+
+// Destroy storage
+storage.destroy();
+```
+
+#### Constructor
+
+<ParamField path="cleanupIntervalMs" type="number" default="60000">
+  Cleanup interval in milliseconds
+</ParamField>
+
+#### Methods
+
+<ResponseField name="save" type="(key: string, value: unknown, ttl?: number) => Promise<void>">
+  Save value with optional TTL (seconds)
+</ResponseField>
+
+<ResponseField name="get" type="(key: string) => Promise<unknown | null>">
+  Retrieve value (returns null if expired/not found)
+</ResponseField>
+
+<ResponseField name="delete" type="(key: string) => Promise<void>">
+  Delete value
+</ResponseField>
+
+<ResponseField name="cleanup" type="() => Promise<void>">
+  Remove expired entries
+</ResponseField>
+
+<ResponseField name="size" type="() => number">
+  Get number of stored items
+</ResponseField>
+
+<ResponseField name="destroy" type="() => void">
+  Clear storage and stop cleanup interval
+</ResponseField>
+
+### EncryptedTokenStorage
+
+Encrypted wrapper for token storage using AES-256-GCM.
+
+```typescript
+import { EncryptedTokenStorage, MemoryTokenStorage } from "fastmcp";
+
+const backend = new MemoryTokenStorage();
+const storage = new EncryptedTokenStorage(backend, "encryption-key");
+
+// Same interface as backend, but values are encrypted
+await storage.save("key", { secret: "data" }, 3600);
+const value = await storage.get("key");
+```
+
+#### Constructor
+
+<ParamField path="backend" type="TokenStorage" required>
+  Underlying storage backend
+</ParamField>
+
+<ParamField path="encryptionKey" type="string" required>
+  Encryption key (derived using scrypt)
+</ParamField>
+
+#### Methods
+
+Same as `TokenStorage` interface - all values are automatically encrypted/decrypted.
+
+## DiscoveryDocumentCache
+
+Caches OAuth discovery documents with TTL and request coalescing.
+
+```typescript
+import { DiscoveryDocumentCache } from "fastmcp";
+
+const cache = new DiscoveryDocumentCache({
+  ttl: 3600000, // 1 hour
+});
+
+// Fetch and cache discovery document
+const doc = await cache.get(
+  "https://accounts.google.com/.well-known/openid-configuration",
+);
+
+// Check if cached
+if (cache.has(url)) {
+  console.log("Document is cached");
+}
+
+// Clear cache
+cache.clear(); // Clear all
+cache.clear(url); // Clear specific URL
+
+// Get cache size
+console.log("Cached documents:", cache.size);
+```
+
+### Constructor
+
+<ParamField path="options" type="object">
+  <Expandable title="properties">
+    <ParamField path="ttl" type="number" default="3600000">
+      Time-to-live in milliseconds (1 hour)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Methods
+
+#### get()
+
+Fetch discovery document (uses cache if available).
+
+<ParamField path="url" type="string" required>
+  Discovery document URL
+</ParamField>
+
+<ResponseField name="document" type="Promise<unknown>">
+  Discovery document as JSON object
+</ResponseField>
+
+**Features:**
+- Returns cached value if valid
+- Coalesces concurrent requests for same URL
+- Auto-caches successful fetches
+
+#### has()
+
+Check if URL is cached and not expired.
+
+<ParamField path="url" type="string" required>
+  Discovery document URL
+</ParamField>
+
+<ResponseField name="cached" type="boolean">
+  Whether document is cached and valid
+</ResponseField>
+
+#### clear()
+
+Clear cache.
+
+<ParamField path="url" type="string">
+  Optional URL to clear (omit to clear all)
+</ParamField>
+
+#### size
+
+Get number of cached documents.
+
+<ResponseField name="size" type="number">
+  Number of cached documents
+</ResponseField>

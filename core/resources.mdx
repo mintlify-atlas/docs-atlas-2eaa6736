@@ -1,0 +1,528 @@
+---
+title: Resources
+description: Expose data and content from your MCP server that clients can read and access
+---
+
+## What are Resources?
+
+Resources in MCP represent any kind of data that an MCP server wants to make available to clients. This can include:
+
+- File contents
+- Screenshots and images
+- Log files
+- Database records
+- API responses
+- And more
+
+Each resource is identified by a unique URI and can contain either text or binary data.
+
+## Basic Usage
+
+Add a resource to your server using the `addResource` method:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addResource({
+  uri: "file:///logs/app.log",
+  name: "Application Logs",
+  mimeType: "text/plain",
+  async load() {
+    return {
+      text: await readLogFile(),
+    };
+  },
+});
+```
+
+## Resource Properties
+
+### URI
+
+The unique identifier for the resource. Use standard URI schemes:
+
+```typescript
+server.addResource({
+  uri: "file:///logs/app.log",     // File system
+  // uri: "https://api.example.com/data", // HTTP
+  // uri: "user://profile/123",    // Custom scheme
+  name: "Application Logs",
+  async load() {
+    return { text: "log content" };
+  },
+});
+```
+
+### MIME Type
+
+Optional MIME type for the resource:
+
+```typescript
+server.addResource({
+  uri: "data://users.json",
+  name: "User Data",
+  mimeType: "application/json",
+  async load() {
+    return {
+      text: JSON.stringify(users),
+    };
+  },
+});
+```
+
+## Return Types
+
+### Text Content
+
+Return text data using the `text` property:
+
+```typescript
+server.addResource({
+  uri: "config://app.json",
+  name: "App Configuration",
+  mimeType: "application/json",
+  async load() {
+    return {
+      text: JSON.stringify({
+        setting1: "value1",
+        setting2: "value2",
+      }),
+    };
+  },
+});
+```
+
+### Binary Content
+
+Return binary data using the `blob` property (base64-encoded):
+
+```typescript
+server.addResource({
+  uri: "file:///images/logo.png",
+  name: "Company Logo",
+  mimeType: "image/png",
+  async load() {
+    const buffer = await readFile("./logo.png");
+    return {
+      blob: buffer.toString("base64"),
+    };
+  },
+});
+```
+
+### Multiple Resources
+
+The `load` function can return an array of resources:
+
+```typescript
+server.addResource({
+  uri: "dir:///logs",
+  name: "All Logs",
+  description: "Directory of log files",
+  async load() {
+    return [
+      {
+        uri: "file:///logs/app.log",
+        text: "App log content",
+      },
+      {
+        uri: "file:///logs/error.log",
+        text: "Error log content",
+      },
+    ];
+  },
+});
+```
+
+<Note>
+Returning multiple resources is useful for directory listings or collections of related data.
+</Note>
+
+## Resource Templates
+
+Resource templates allow you to define dynamic resources with URI parameters:
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "file:///logs/{name}.log",
+  name: "Application Logs",
+  mimeType: "text/plain",
+  arguments: [
+    {
+      name: "name",
+      description: "Name of the log file",
+      required: true,
+    },
+  ],
+  async load({ name }) {
+    return {
+      text: `Log content for ${name}`,
+    };
+  },
+});
+```
+
+### URI Templates
+
+Use URI templates with placeholders:
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "user://{userId}/profile",
+  name: "User Profile",
+  arguments: [
+    {
+      name: "userId",
+      description: "The user's ID",
+      required: true,
+    },
+  ],
+  async load({ userId }) {
+    const user = await fetchUser(userId);
+    return {
+      text: JSON.stringify(user),
+    };
+  },
+});
+```
+
+### Multiple Arguments
+
+Templates can have multiple arguments:
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "docs://project/{section}/{page}",
+  name: "Project Documentation",
+  mimeType: "text/markdown",
+  arguments: [
+    {
+      name: "section",
+      description: "Documentation section",
+      required: true,
+    },
+    {
+      name: "page",
+      description: "Page name",
+      required: true,
+    },
+  ],
+  async load({ section, page }) {
+    return {
+      text: `# ${section}/${page}\n\nContent here...`,
+    };
+  },
+});
+```
+
+### Optional Arguments
+
+Mark arguments as optional:
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "api://users/{userId}",
+  name: "User Data",
+  arguments: [
+    {
+      name: "userId",
+      description: "User ID to fetch",
+      required: false, // Optional argument
+    },
+  ],
+  async load({ userId }) {
+    if (userId) {
+      return { text: JSON.stringify(await fetchUser(userId)) };
+    }
+    return { text: JSON.stringify(await fetchAllUsers()) };
+  },
+});
+```
+
+## Argument Auto-completion
+
+Provide auto-completion for resource template arguments:
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "file:///logs/{name}.log",
+  name: "Application Logs",
+  arguments: [
+    {
+      name: "name",
+      description: "Name of the log",
+      required: true,
+      complete: async (value) => {
+        // Filter log files based on input
+        const logs = await listLogFiles();
+        const filtered = logs.filter(log => 
+          log.startsWith(value)
+        );
+        
+        return {
+          values: filtered,
+        };
+      },
+    },
+  ],
+  async load({ name }) {
+    return {
+      text: `Log content for ${name}`,
+    };
+  },
+});
+```
+
+### Completion Response
+
+The `complete` function returns a completion object:
+
+```typescript
+type Completion = {
+  values: string[];        // Array of completion values (max 100)
+  total?: number;          // Total number of available completions
+  hasMore?: boolean;       // Whether more completions exist
+};
+```
+
+Example with metadata:
+
+```typescript
+complete: async (value) => {
+  const allOptions = await getAllOptions();
+  const filtered = allOptions.filter(opt => 
+    opt.startsWith(value)
+  );
+  
+  return {
+    values: filtered.slice(0, 100),
+    total: filtered.length,
+    hasMore: filtered.length > 100,
+  };
+}
+```
+
+## Embedded Resources
+
+The `embedded()` method simplifies including resources in tool responses:
+
+### Basic Example
+
+```typescript
+server.addResource({
+  uri: "system://status",
+  name: "System Status",
+  mimeType: "text/plain",
+  async load() {
+    return {
+      text: "System operational",
+    };
+  },
+});
+
+server.addTool({
+  name: "get_system_status",
+  description: "Get current system status",
+  execute: async () => {
+    return {
+      content: [
+        {
+          type: "resource",
+          resource: await server.embedded("system://status"),
+        },
+      ],
+    };
+  },
+});
+```
+
+### With Resource Templates
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "docs://project/{section}",
+  name: "Project Documentation",
+  mimeType: "text/markdown",
+  arguments: [
+    {
+      name: "section",
+      required: true,
+    },
+  ],
+  async load(args) {
+    const docs = {
+      "getting-started": "# Getting Started\n\nWelcome!",
+      "api-reference": "# API Reference\n\nAuth required.",
+    };
+    return {
+      text: docs[args.section] || "Not found",
+    };
+  },
+});
+
+server.addTool({
+  name: "get_documentation",
+  description: "Retrieve project documentation",
+  parameters: z.object({
+    section: z.enum(["getting-started", "api-reference"]),
+  }),
+  execute: async (args) => {
+    return {
+      content: [
+        {
+          type: "resource",
+          resource: await server.embedded(`docs://project/${args.section}`),
+        },
+      ],
+    };
+  },
+});
+```
+
+## Authentication Context
+
+Resources can access authentication context:
+
+```typescript
+server.addResource({
+  uri: "session://current-user",
+  name: "Current User Information",
+  mimeType: "application/json",
+  load: async (auth) => {
+    if (!auth) {
+      return {
+        text: JSON.stringify({ authenticated: false }),
+      };
+    }
+    
+    return {
+      text: JSON.stringify({
+        authenticated: true,
+        user: {
+          id: auth.userId,
+          username: auth.username,
+          role: auth.role,
+        },
+      }),
+    };
+  },
+});
+```
+
+## Complete Example
+
+Here's a complete example combining multiple features:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "Documentation Server",
+  version: "1.0.0",
+});
+
+// Static resource
+server.addResource({
+  uri: "docs://readme",
+  name: "README",
+  mimeType: "text/markdown",
+  description: "Project README file",
+  async load() {
+    return {
+      text: "# My Project\n\nWelcome to the project!",
+    };
+  },
+});
+
+// Resource template with auto-completion
+server.addResourceTemplate({
+  uriTemplate: "docs://api/{endpoint}",
+  name: "API Documentation",
+  mimeType: "text/markdown",
+  arguments: [
+    {
+      name: "endpoint",
+      description: "API endpoint to document",
+      required: true,
+      complete: async (value) => {
+        const endpoints = ["users", "posts", "comments"];
+        return {
+          values: endpoints.filter(e => e.startsWith(value)),
+        };
+      },
+    },
+  ],
+  async load({ endpoint }) {
+    const docs = {
+      users: "# Users API\n\nManage users...",
+      posts: "# Posts API\n\nManage posts...",
+      comments: "# Comments API\n\nManage comments...",
+    };
+    
+    return {
+      text: docs[endpoint] || "Endpoint not found",
+    };
+  },
+});
+
+// Tool using embedded resources
+server.addTool({
+  name: "get_docs",
+  description: "Get API documentation",
+  parameters: z.object({
+    endpoint: z.string(),
+  }),
+  execute: async (args) => {
+    return {
+      content: [
+        {
+          type: "resource",
+          resource: await server.embedded(`docs://api/${args.endpoint}`),
+        },
+      ],
+    };
+  },
+});
+```
+
+## API Reference
+
+### Resource Type
+
+```typescript
+type Resource<T> = {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  load: (auth?: T) => Promise<ResourceResult | ResourceResult[]>;
+};
+```
+
+### ResourceTemplate Type
+
+```typescript
+type ResourceTemplate<T, Arguments> = {
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  arguments: ResourceTemplateArgument[];
+  load: (args: Args, auth?: T) => Promise<ResourceResult | ResourceResult[]>;
+  complete?: (name: string, value: string, auth?: T) => Promise<Completion>;
+};
+```
+
+### ResourceResult Type
+
+```typescript
+type ResourceResult =
+  | { text: string; mimeType?: string; uri?: string }
+  | { blob: string; mimeType?: string; uri?: string };
+```

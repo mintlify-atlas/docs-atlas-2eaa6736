@@ -1,0 +1,342 @@
+---
+title: Authentication Helpers
+description: Helper functions for authorization in tools, resources, and prompts
+---
+
+FastMCP provides helper functions to simplify authorization logic in your tools, resources, and prompts.
+
+## requireAuth()
+
+Requires any authenticated session.
+
+```typescript
+import { requireAuth } from "fastmcp";
+
+server.addTool({
+  name: "protected_tool",
+  description: "Requires authentication",
+  canAccess: requireAuth,
+  execute: async (args, context) => {
+    return `Hello ${context.session.userId}`;
+  },
+});
+```
+
+<ParamField path="auth" type="SessionAuth" required>
+  Session authentication data (can be undefined)
+</ParamField>
+
+<ResponseField name="result" type="boolean">
+  Returns `true` if session is authenticated, `false` otherwise
+</ResponseField>
+
+## requireScopes()
+
+Requires session to have specific OAuth scopes.
+
+```typescript
+import { requireScopes } from "fastmcp";
+
+server.addTool({
+  name: "read_emails",
+  description: "Read user emails",
+  canAccess: requireScopes("email", "profile"),
+  execute: async (args, context) => {
+    const session = context.session as OAuthSession;
+    // Access guaranteed to have email and profile scopes
+    return "Emails: ...";
+  },
+});
+```
+
+<ParamField path="...requiredScopes" type="string[]" required>
+  One or more scopes that must be present in the session
+</ParamField>
+
+<ResponseField name="function" type="(auth: T) => boolean">
+  Returns a function that checks if all required scopes are present
+</ResponseField>
+
+### Usage
+
+The function checks if the session has a `scopes` property (array or Set) and verifies all required scopes are present:
+
+```typescript
+// Session must have both scopes
+canAccess: requireScopes("read:user", "repo")
+
+// Works with OAuthSession type
+interface MySession extends OAuthSession {
+  scopes?: string[];
+}
+```
+
+## requireRole()
+
+Requires session to have a specific role (OR logic for multiple roles).
+
+```typescript
+import { requireRole } from "fastmcp";
+
+server.addTool({
+  name: "admin_panel",
+  description: "Access admin features",
+  canAccess: requireRole("admin", "moderator"),
+  execute: async (args, context) => {
+    // User is either admin or moderator
+    return "Admin panel";
+  },
+});
+```
+
+<ParamField path="...allowedRoles" type="string[]" required>
+  One or more roles (user needs at least one)
+</ParamField>
+
+<ResponseField name="function" type="(auth: T) => boolean">
+  Returns a function that checks if session has any of the allowed roles
+</ResponseField>
+
+### Usage
+
+The function checks if the session has a `role` property (string) matching any of the allowed roles:
+
+```typescript
+// User must be admin OR moderator
+canAccess: requireRole("admin", "moderator")
+
+// Custom session type with role
+interface MySession {
+  role: string;
+  userId: string;
+}
+```
+
+## requireAll()
+
+Combines multiple authorization checks with AND logic.
+
+```typescript
+import { requireAll, requireAuth, requireScopes, requireRole } from "fastmcp";
+
+server.addTool({
+  name: "sensitive_operation",
+  description: "Requires multiple conditions",
+  canAccess: requireAll(
+    requireAuth,
+    requireScopes("admin"),
+    requireRole("superuser"),
+  ),
+  execute: async (args, context) => {
+    // User is authenticated AND has admin scope AND is superuser
+    return "Sensitive data";
+  },
+});
+```
+
+<ParamField path="...checks" type="Array<((auth: T) => boolean) | boolean>" required>
+  One or more authorization check functions or boolean values
+</ParamField>
+
+<ResponseField name="function" type="(auth: T) => boolean">
+  Returns a function that returns true only if ALL checks pass
+</ResponseField>
+
+### Usage
+
+All checks must pass for access to be granted:
+
+```typescript
+// All conditions must be true
+canAccess: requireAll(
+  requireAuth,                    // Must be logged in
+  requireScopes("write"),         // AND have write scope  
+  requireRole("admin"),            // AND be admin
+  (auth) => auth.verified === true, // AND be verified
+)
+```
+
+## requireAny()
+
+Combines multiple authorization checks with OR logic.
+
+```typescript
+import { requireAny, requireRole, requireScopes } from "fastmcp";
+
+server.addTool({
+  name: "read_logs",
+  description: "Accessible to admins or users with logs scope",
+  canAccess: requireAny(
+    requireRole("admin"),
+    requireScopes("logs:read"),
+  ),
+  execute: async (args, context) => {
+    // User is admin OR has logs:read scope
+    return "Log data";
+  },
+});
+```
+
+<ParamField path="...checks" type="Array<((auth: T) => boolean) | boolean>" required>
+  One or more authorization check functions or boolean values
+</ParamField>
+
+<ResponseField name="function" type="(auth: T) => boolean">
+  Returns a function that returns true if ANY check passes
+</ResponseField>
+
+### Usage
+
+At least one check must pass for access to be granted:
+
+```typescript
+// Any condition can be true
+canAccess: requireAny(
+  requireRole("admin", "moderator"), // Admin OR moderator
+  requireScopes("owner"),            // OR has owner scope
+  (auth) => auth.premium === true,   // OR is premium user
+)
+```
+
+## getAuthSession()
+
+Extract and type-cast OAuth session from context. Throws if session is undefined.
+
+```typescript
+import { getAuthSession, requireAuth } from "fastmcp";
+import type { GoogleSession } from "fastmcp";
+
+server.addTool({
+  name: "get_profile",
+  description: "Get user profile from Google",
+  canAccess: requireAuth,
+  execute: async (args, context) => {
+    const session = getAuthSession<GoogleSession>(context.session);
+    
+    // TypeScript knows session has GoogleSession properties
+    return `Email: ${session.email}`;
+  },
+});
+```
+
+<ParamField path="session" type="SessionAuth" required>
+  Session from context (can be undefined)
+</ParamField>
+
+<ResponseField name="result" type="T">
+  Typed session object (throws if undefined)
+</ResponseField>
+
+### Usage
+
+Use with provider-specific session types:
+
+```typescript
+import { getAuthSession } from "fastmcp";
+import type { GitHubSession, GoogleSession, AzureSession } from "fastmcp";
+
+// GitHub provider
+const session = getAuthSession<GitHubSession>(context.session);
+console.log(session.username);
+
+// Google provider  
+const session = getAuthSession<GoogleSession>(context.session);
+console.log(session.email);
+
+// Azure provider
+const session = getAuthSession<AzureSession>(context.session);
+console.log(session.upn);
+
+// Custom session type
+interface MySession extends OAuthSession {
+  customField: string;
+}
+const session = getAuthSession<MySession>(context.session);
+console.log(session.customField);
+```
+
+## Complex Authorization Examples
+
+### Multi-tier access control
+
+```typescript
+import { requireAll, requireAny, requireAuth, requireRole, requireScopes } from "fastmcp";
+
+server.addTool({
+  name: "edit_settings",
+  canAccess: requireAll(
+    requireAuth,
+    requireAny(
+      requireRole("admin"),
+      requireAll(
+        requireRole("user"),
+        requireScopes("settings:write"),
+      ),
+    ),
+  ),
+  execute: async () => "Settings updated",
+});
+```
+
+### Custom authorization logic
+
+```typescript
+import { requireAll, requireAuth } from "fastmcp";
+
+interface MySession extends OAuthSession {
+  organizationId: string;
+  permissions: string[];
+}
+
+const requireOrganization = (orgId: string) => (auth: MySession) => {
+  return auth.organizationId === orgId;
+};
+
+const requirePermission = (permission: string) => (auth: MySession) => {
+  return auth.permissions.includes(permission);
+};
+
+server.addTool({
+  name: "org_action",
+  canAccess: requireAll(
+    requireAuth,
+    requireOrganization("org-123"),
+    requirePermission("actions:execute"),
+  ),
+  execute: async () => "Action executed",
+});
+```
+
+### Resource-level authorization
+
+```typescript
+import { requireScopes } from "fastmcp";
+
+server.addResource({
+  uri: "db://users",
+  name: "Users Database",
+  canAccess: requireScopes("db:read"),
+  load: async () => ({ text: "User data" }),
+});
+
+server.addResourceTemplate({
+  uriTemplate: "db://users/{id}",
+  name: "User Record",
+  arguments: [{ name: "id", required: true }],
+  canAccess: requireScopes("db:read"),
+  load: async ({ id }) => ({ text: `User ${id}` }),
+});
+```
+
+### Prompt authorization
+
+```typescript
+import { requireRole } from "fastmcp";
+
+server.addPrompt({
+  name: "admin_prompt",
+  description: "Admin-only prompt",
+  canAccess: requireRole("admin"),
+  load: async () => "Admin instructions...",
+});
+```

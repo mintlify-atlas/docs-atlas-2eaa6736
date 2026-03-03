@@ -1,0 +1,565 @@
+---
+title: Logging
+description: Custom logging with support for Winston, Pino, and file-based logging
+---
+
+FastMCP provides flexible logging options, allowing you to customize how your server logs messages and integrate with existing logging infrastructure.
+
+## Custom Logger
+
+Provide a custom logger implementation to control how the server logs messages:
+
+```typescript
+import { FastMCP, Logger } from "fastmcp";
+
+class CustomLogger implements Logger {
+  debug(...args: unknown[]): void {
+    console.log("[DEBUG]", new Date().toISOString(), ...args);
+  }
+
+  error(...args: unknown[]): void {
+    console.error("[ERROR]", new Date().toISOString(), ...args);
+  }
+
+  info(...args: unknown[]): void {
+    console.info("[INFO]", new Date().toISOString(), ...args);
+  }
+
+  log(...args: unknown[]): void {
+    console.log("[LOG]", new Date().toISOString(), ...args);
+  }
+
+  warn(...args: unknown[]): void {
+    console.warn("[WARN]", new Date().toISOString(), ...args);
+  }
+}
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+  logger: new CustomLogger(),
+});
+```
+
+## Logger Interface
+
+The `Logger` interface requires five methods:
+
+```typescript
+interface Logger {
+  debug(...args: unknown[]): void;
+  error(...args: unknown[]): void;
+  info(...args: unknown[]): void;
+  log(...args: unknown[]): void;
+  warn(...args: unknown[]): void;
+}
+```
+
+## Logging in Tools
+
+Tools can log messages to the client using the `log` object in the context:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args, { log }) => {
+    log.info("Downloading file...", {
+      url: args.url,
+    });
+
+    // Download logic here...
+
+    log.info("Downloaded file");
+
+    return "done";
+  },
+});
+```
+
+### Log Methods
+
+The `log` object provides four methods:
+
+| Method | Description | Use Case |
+|--------|-------------|----------|
+| `debug(message, data?)` | Debug-level logging | Detailed diagnostic information |
+| `error(message, data?)` | Error-level logging | Error conditions |
+| `info(message, data?)` | Info-level logging | General informational messages |
+| `warn(message, data?)` | Warning-level logging | Warning conditions |
+
+All methods accept:
+- `message: string` - The log message
+- `data?: SerializableValue` - Optional structured data
+
+## Integration Examples
+
+<Tabs>
+  <Tab title="Winston">
+    ```typescript
+    import winston from 'winston';
+    import { FastMCP, Logger } from 'fastmcp';
+
+    class WinstonLoggerAdapter implements Logger {
+      private winston: winston.Logger;
+
+      constructor() {
+        this.winston = winston.createLogger({
+          level: 'debug',
+          format: winston.format.combine(
+            winston.format.timestamp(),
+            winston.format.errors({ stack: true }),
+            winston.format.json()
+          ),
+          transports: [
+            new winston.transports.Console({
+              format: winston.format.combine(
+                winston.format.colorize(),
+                winston.format.simple()
+              )
+            }),
+            new winston.transports.File({ filename: 'fastmcp.log' })
+          ]
+        });
+      }
+
+      debug(...args: unknown[]): void {
+        this.winston.debug(this.formatArgs(args));
+      }
+
+      error(...args: unknown[]): void {
+        this.winston.error(this.formatArgs(args));
+      }
+
+      info(...args: unknown[]): void {
+        this.winston.info(this.formatArgs(args));
+      }
+
+      log(...args: unknown[]): void {
+        this.winston.info(this.formatArgs(args));
+      }
+
+      warn(...args: unknown[]): void {
+        this.winston.warn(this.formatArgs(args));
+      }
+
+      private formatArgs(args: unknown[]): string {
+        return args.map(arg =>
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ).join(' ');
+      }
+    }
+
+    const server = new FastMCP({
+      name: "My Server",
+      version: "1.0.0",
+      logger: new WinstonLoggerAdapter(),
+    });
+    ```
+  </Tab>
+
+  <Tab title="Pino">
+    ```typescript
+    import pino from 'pino';
+    import { FastMCP, Logger } from 'fastmcp';
+
+    class PinoLoggerAdapter implements Logger {
+      private pino: pino.Logger;
+
+      constructor() {
+        this.pino = pino({
+          level: 'debug',
+          transport: {
+            target: 'pino-pretty',
+            options: {
+              colorize: true,
+              translateTime: 'SYS:standard',
+              ignore: 'pid,hostname'
+            }
+          }
+        });
+      }
+
+      debug(...args: unknown[]): void {
+        this.pino.debug(this.formatMessage(args));
+      }
+
+      error(...args: unknown[]): void {
+        this.pino.error(this.formatMessage(args));
+      }
+
+      info(...args: unknown[]): void {
+        this.pino.info(this.formatMessage(args));
+      }
+
+      log(...args: unknown[]): void {
+        this.pino.info(this.formatMessage(args));
+      }
+
+      warn(...args: unknown[]): void {
+        this.pino.warn(this.formatMessage(args));
+      }
+
+      private formatMessage(args: unknown[]): string {
+        return args.map(arg =>
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ).join(' ');
+      }
+    }
+
+    const server = new FastMCP({
+      name: "My Server",
+      version: "1.0.0",
+      logger: new PinoLoggerAdapter(),
+    });
+    ```
+  </Tab>
+
+  <Tab title="File-based">
+    ```typescript
+    import * as fs from 'fs';
+    import { FastMCP, Logger } from 'fastmcp';
+
+    class FileLogger implements Logger {
+      private logFile: string;
+
+      constructor(logFile: string) {
+        this.logFile = logFile;
+      }
+
+      debug(...args: unknown[]): void {
+        this.logToFile('DEBUG', ...args);
+      }
+
+      error(...args: unknown[]): void {
+        this.logToFile('ERROR', ...args);
+      }
+
+      info(...args: unknown[]): void {
+        this.logToFile('INFO', ...args);
+      }
+
+      log(...args: unknown[]): void {
+        this.logToFile('LOG', ...args);
+      }
+
+      warn(...args: unknown[]): void {
+        this.logToFile('WARN', ...args);
+      }
+
+      private logToFile(level: string, ...args: unknown[]): void {
+        const timestamp = new Date().toISOString();
+        const message = `[${timestamp}] [${level}] ${args.map(arg =>
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ).join(' ')}\n`;
+
+        fs.appendFileSync(this.logFile, message);
+      }
+    }
+
+    const server = new FastMCP({
+      name: "My Server",
+      version: "1.0.0",
+      logger: new FileLogger('/var/log/fastmcp.log'),
+    });
+    ```
+  </Tab>
+
+  <Tab title="Simple Custom">
+    ```typescript
+    import { FastMCP, Logger } from 'fastmcp';
+
+    class SimpleCustomLogger implements Logger {
+      debug(...args: unknown[]): void {
+        console.log('[CUSTOM DEBUG]', new Date().toISOString(), ...args);
+      }
+
+      error(...args: unknown[]): void {
+        console.error('[CUSTOM ERROR]', new Date().toISOString(), ...args);
+      }
+
+      info(...args: unknown[]): void {
+        console.info('[CUSTOM INFO]', new Date().toISOString(), ...args);
+      }
+
+      log(...args: unknown[]): void {
+        console.log('[CUSTOM LOG]', new Date().toISOString(), ...args);
+      }
+
+      warn(...args: unknown[]): void {
+        console.warn('[CUSTOM WARN]', new Date().toISOString(), ...args);
+      }
+    }
+
+    const server = new FastMCP({
+      name: "My Server",
+      version: "1.0.0",
+      logger: new SimpleCustomLogger(),
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Real-World Example
+
+Here's a complete example from the FastMCP repository showing custom logging:
+
+```typescript src/examples/custom-logger.ts
+import { z } from "zod";
+import { FastMCP, Logger } from "../FastMCP.js";
+
+// Simple Custom Logger Implementation
+class SimpleCustomLogger implements Logger {
+  debug(...args: unknown[]): void {
+    console.log("[CUSTOM DEBUG]", new Date().toISOString(), ...args);
+  }
+
+  error(...args: unknown[]): void {
+    console.error("[CUSTOM ERROR]", new Date().toISOString(), ...args);
+  }
+
+  info(...args: unknown[]): void {
+    console.info("[CUSTOM INFO]", new Date().toISOString(), ...args);
+  }
+
+  log(...args: unknown[]): void {
+    console.log("[CUSTOM LOG]", new Date().toISOString(), ...args);
+  }
+
+  warn(...args: unknown[]): void {
+    console.warn("[CUSTOM WARN]", new Date().toISOString(), ...args);
+  }
+}
+
+const logger = new SimpleCustomLogger();
+
+const server = new FastMCP({
+  logger: logger,
+  name: "custom-logger-example",
+  version: "1.0.0",
+});
+
+server.addTool({
+  description: "A test tool that demonstrates custom logging",
+  execute: async (args) => {
+    return `Received: ${args.message}`;
+  },
+  name: "test_tool",
+  parameters: z.object({
+    message: z.string().describe("A message to log"),
+  }),
+});
+
+server.start({ transportType: "stdio" });
+```
+
+## Structured Logging
+
+Log structured data alongside messages:
+
+```typescript
+server.addTool({
+  name: "processOrder",
+  description: "Process an order",
+  parameters: z.object({
+    orderId: z.string(),
+    items: z.array(z.string()),
+  }),
+  execute: async ({ orderId, items }, { log }) => {
+    log.info("Processing order", {
+      orderId,
+      itemCount: items.length,
+      timestamp: new Date().toISOString(),
+    });
+
+    try {
+      // Process order...
+      log.info("Order processed successfully", { orderId });
+    } catch (error) {
+      log.error("Order processing failed", {
+        orderId,
+        error: error.message,
+      });
+      throw error;
+    }
+
+    return "Order processed";
+  },
+});
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use Appropriate Log Levels">
+    - `debug`: Detailed diagnostic information
+    - `info`: General informational messages
+    - `warn`: Warning conditions
+    - `error`: Error conditions
+  </Step>
+
+  <Step title="Include Context in Logs">
+    Always log relevant context data:
+    ```typescript
+    log.info("Processing file", {
+      filename: file.name,
+      size: file.size,
+      userId: session.userId,
+    });
+    ```
+  </Step>
+
+  <Step title="Log at Key Points">
+    Log at important stages:
+    - Start of operations
+    - Completion of operations
+    - Error conditions
+    - State changes
+  </Step>
+
+  <Step title="Avoid Logging Sensitive Data">
+    Never log:
+    - Passwords
+    - API keys
+    - Personal information (unless necessary and compliant)
+    - Credit card numbers
+  </Step>
+
+  <Step title="Use Structured Logging">
+    Prefer structured data over string concatenation:
+    ```typescript
+    // Good
+    log.info("User login", { userId, timestamp });
+
+    // Avoid
+    log.info(`User ${userId} logged in at ${timestamp}`);
+    ```
+  </Step>
+</Steps>
+
+## Production Considerations
+
+### Log Rotation
+
+For file-based logging, implement log rotation:
+
+```typescript
+import * as fs from 'fs';
+import * as path from 'path';
+
+class RotatingFileLogger implements Logger {
+  private logFile: string;
+  private maxSize: number = 10 * 1024 * 1024; // 10MB
+  private maxFiles: number = 5;
+
+  constructor(logFile: string) {
+    this.logFile = logFile;
+  }
+
+  private rotateIfNeeded(): void {
+    if (!fs.existsSync(this.logFile)) return;
+
+    const stats = fs.statSync(this.logFile);
+    if (stats.size < this.maxSize) return;
+
+    // Rotate logs
+    for (let i = this.maxFiles - 1; i >= 0; i--) {
+      const oldFile = `${this.logFile}.${i}`;
+      const newFile = `${this.logFile}.${i + 1}`;
+      if (fs.existsSync(oldFile)) {
+        fs.renameSync(oldFile, newFile);
+      }
+    }
+
+    fs.renameSync(this.logFile, `${this.logFile}.0`);
+  }
+
+  private logToFile(level: string, ...args: unknown[]): void {
+    this.rotateIfNeeded();
+
+    const timestamp = new Date().toISOString();
+    const message = `[${timestamp}] [${level}] ${args.map(arg =>
+      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+    ).join(' ')}\n`;
+
+    fs.appendFileSync(this.logFile, message);
+  }
+
+  debug(...args: unknown[]): void {
+    this.logToFile('DEBUG', ...args);
+  }
+
+  error(...args: unknown[]): void {
+    this.logToFile('ERROR', ...args);
+  }
+
+  info(...args: unknown[]): void {
+    this.logToFile('INFO', ...args);
+  }
+
+  log(...args: unknown[]): void {
+    this.logToFile('LOG', ...args);
+  }
+
+  warn(...args: unknown[]): void {
+    this.logToFile('WARN', ...args);
+  }
+}
+```
+
+### Performance Monitoring
+
+Log performance metrics:
+
+```typescript
+server.addTool({
+  name: "expensiveOperation",
+  execute: async (args, { log }) => {
+    const startTime = Date.now();
+
+    log.info("Starting expensive operation", { args });
+
+    try {
+      // Do work...
+      const result = await doWork();
+
+      const duration = Date.now() - startTime;
+      log.info("Operation completed", {
+        duration,
+        success: true,
+      });
+
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      log.error("Operation failed", {
+        duration,
+        error: error.message,
+      });
+      throw error;
+    }
+  },
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Streaming" icon="stream" href="/features/streaming">
+    Learn how to stream content and report progress
+  </Card>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Secure your server with authentication
+  </Card>
+</CardGroup>

@@ -1,0 +1,312 @@
+---
+title: Stateless mode
+description: Deploy FastMCP servers in stateless mode for serverless environments
+---
+
+Stateless mode allows FastMCP to operate without maintaining persistent sessions, making it ideal for serverless deployments, load-balanced environments, or when session state isn't required.
+
+## Overview
+
+In stateless mode:
+- No sessions are tracked on the server
+- Each request creates a temporary session that's discarded after the response
+- Reduced memory usage and better scalability
+- Perfect for serverless deployment environments (AWS Lambda, Cloud Functions, etc.)
+
+<Warning>
+  Stateless mode is only available with HTTP streaming transport. Features that depend on persistent sessions (like session-specific state) will not be available.
+</Warning>
+
+## Enabling stateless mode
+
+Enable stateless mode in your server configuration:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+    stateless: true, // Enable stateless mode
+  },
+});
+```
+
+## Via CLI
+
+You can also enable stateless mode using CLI arguments:
+
+<CodeGroup>
+```bash CLI flag
+npx fastmcp dev src/server.ts --transport http-stream --port 8080 --stateless true
+```
+
+```bash Environment variable
+FASTMCP_STATELESS=true npx fastmcp dev src/server.ts --transport http-stream --port 8080
+```
+</CodeGroup>
+
+## Health checks
+
+The `/ready` health check endpoint indicates when the server is running in stateless mode:
+
+```bash
+curl http://localhost:8080/ready
+```
+
+```json
+{
+  "mode": "stateless",
+  "ready": 1,
+  "status": "ready",
+  "total": 1
+}
+```
+
+## Use cases
+
+<CardGroup cols={2}>
+  <Card title="Serverless Functions" icon="cloud">
+    AWS Lambda, Google Cloud Functions, Azure Functions
+  </Card>
+  <Card title="Load Balanced" icon="scale-balanced">
+    Multiple server instances behind a load balancer
+  </Card>
+  <Card title="Auto-scaling" icon="arrows-up-down">
+    Environments that scale based on traffic
+  </Card>
+  <Card title="Ephemeral Containers" icon="box">
+    Docker containers that start and stop frequently
+  </Card>
+</CardGroup>
+
+## Differences from stateful mode
+
+| Feature | Stateful Mode | Stateless Mode |
+|---------|--------------|----------------|
+| Session persistence | ✅ Sessions maintained | ❌ No session persistence |
+| Memory usage | Higher (stores sessions) | Lower (no session storage) |
+| Horizontal scaling | Complex (session affinity) | Simple (no affinity needed) |
+| Server-initiated messages | ✅ Supported | ❌ Not supported |
+| Cold start time | Slower | Faster |
+| Best for | Long-lived connections | Short-lived requests |
+
+## Example: Serverless deployment
+
+Here's a complete example for AWS Lambda:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "Serverless MCP",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "calculate",
+  description: "Perform a calculation",
+  parameters: z.object({
+    operation: z.enum(["add", "subtract", "multiply", "divide"]),
+    a: z.number(),
+    b: z.number(),
+  }),
+  execute: async (args) => {
+    const operations = {
+      add: args.a + args.b,
+      subtract: args.a - args.b,
+      multiply: args.a * args.b,
+      divide: args.a / args.b,
+    };
+    return `Result: ${operations[args.operation]}`;
+  },
+});
+
+// Start in stateless mode for serverless
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: Number(process.env.PORT) || 8080,
+    stateless: true,
+  },
+});
+```
+
+## Authentication in stateless mode
+
+Authentication works the same way in stateless mode, but the session is recreated for each request:
+
+```typescript
+import { FastMCP, requireAuth } from "fastmcp";
+
+const server = new FastMCP({
+  name: "Authenticated Serverless MCP",
+  version: "1.0.0",
+  authenticate: (request) => {
+    const apiKey = request.headers["x-api-key"];
+    
+    if (apiKey !== process.env.API_KEY) {
+      throw new Response(null, {
+        status: 401,
+        statusText: "Unauthorized",
+      });
+    }
+
+    return {
+      id: "user-123",
+      apiKey,
+    };
+  },
+});
+
+server.addTool({
+  name: "protected_action",
+  description: "A protected action",
+  canAccess: requireAuth,
+  execute: async (_args, { session }) => {
+    return `Hello, user ${session.id}!`;
+  },
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+    stateless: true,
+  },
+});
+```
+
+## Performance considerations
+
+<Steps>
+  <Step title="Optimize cold starts">
+    Keep your server initialization code lean to minimize cold start time.
+
+    ```typescript
+    // Good: Lazy load heavy dependencies
+    server.addTool({
+      name: "analyze",
+      execute: async (args) => {
+        const { analyzeData } = await import("./heavy-analyzer");
+        return analyzeData(args);
+      },
+    });
+
+    // Bad: Load everything upfront
+    import { heavyAnalyzer } from "./heavy-analyzer";
+    ```
+  </Step>
+
+  <Step title="Use external storage">
+    For data that persists across requests, use external storage (S3, DynamoDB, etc.).
+
+    ```typescript
+    import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+
+    const s3 = new S3Client({});
+
+    server.addTool({
+      name: "get_data",
+      execute: async (args) => {
+        const response = await s3.send(
+          new GetObjectCommand({
+            Bucket: "my-bucket",
+            Key: args.key,
+          })
+        );
+        return await response.Body.transformToString();
+      },
+    });
+    ```
+  </Step>
+
+  <Step title="Implement caching wisely">
+    Use external caching services (Redis, Memcached) for frequently accessed data.
+
+    ```typescript
+    import { createClient } from "redis";
+
+    const redis = createClient({
+      url: process.env.REDIS_URL,
+    });
+
+    server.addTool({
+      name: "get_cached_data",
+      execute: async (args) => {
+        const cached = await redis.get(args.key);
+        if (cached) return cached;
+
+        const data = await fetchExpensiveData(args.key);
+        await redis.setEx(args.key, 3600, data);
+        return data;
+      },
+    });
+    ```
+  </Step>
+</Steps>
+
+## Environment variables
+
+Common environment variables for stateless deployments:
+
+```bash
+# Enable stateless mode
+FASTMCP_STATELESS=true
+
+# Server configuration
+PORT=8080
+NODE_ENV=production
+
+# External services
+REDIS_URL=redis://localhost:6379
+DATABASE_URL=postgresql://localhost:5432/db
+
+# Authentication
+API_KEY=your-secret-key
+JWT_SECRET=your-jwt-secret
+```
+
+## Monitoring and debugging
+
+Use structured logging for better observability:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import winston from "winston";
+
+const logger = winston.createLogger({
+  format: winston.format.json(),
+  transports: [new winston.transports.Console()],
+});
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+  logger: {
+    debug: (...args) => logger.debug(args[0], args.slice(1)),
+    error: (...args) => logger.error(args[0], args.slice(1)),
+    info: (...args) => logger.info(args[0], args.slice(1)),
+    log: (...args) => logger.info(args[0], args.slice(1)),
+    warn: (...args) => logger.warn(args[0], args.slice(1)),
+  },
+});
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Serverless Deployment" icon="cloud" href="/deployment/serverless">
+    Learn about deploying to serverless platforms
+  </Card>
+  <Card title="Transports" icon="network-wired" href="/core/transports">
+    Learn about other transport options
+  </Card>
+</CardGroup>

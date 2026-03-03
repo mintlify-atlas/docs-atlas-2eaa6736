@@ -1,0 +1,467 @@
+---
+title: Streaming & Progress
+description: Stream partial results and report progress from long-running operations
+---
+
+FastMCP supports streaming partial results from tools while they're still executing, enabling responsive UIs and real-time feedback. This is particularly useful for long-running operations that generate content incrementally.
+
+## Streaming Output
+
+To enable streaming for a tool, add the `streamingHint` annotation and use the `streamContent` method:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "generateText",
+  description: "Generate text incrementally",
+  parameters: z.object({
+    prompt: z.string(),
+  }),
+  annotations: {
+    streamingHint: true, // Signals this tool uses streaming
+    readOnlyHint: true,
+  },
+  execute: async (args, { streamContent }) => {
+    // Send initial content immediately
+    await streamContent({ type: "text", text: "Starting generation...\n" });
+
+    // Simulate incremental content generation
+    const words = "The quick brown fox jumps over the lazy dog.".split(" ");
+    for (const word of words) {
+      await streamContent({ type: "text", text: word + " " });
+      await new Promise((resolve) => setTimeout(resolve, 300)); // Simulate delay
+    }
+
+    // When using streamContent, you can:
+    // 1. Return void (if all content was streamed)
+    // 2. Return a final result (which will be appended to streamed content)
+
+    // Option 1: All content was streamed
+    return;
+
+    // Option 2: Return final content that will be appended
+    // return "Generation complete!";
+  },
+});
+```
+
+## Benefits of Streaming
+
+Streaming provides several advantages for long-running operations:
+
+<CardGroup cols={2}>
+  <Card title="Responsive UIs" icon="gauge-high">
+    Users see results immediately instead of waiting for completion
+  </Card>
+  <Card title="Progressive Generation" icon="forward">
+    Perfect for AI text generation, data processing, and file operations
+  </Card>
+  <Card title="Better UX" icon="user">
+    Users can start reading or acting on partial results
+  </Card>
+  <Card title="Error Recovery" icon="rotate-right">
+    Users see what was generated before an error occurred
+  </Card>
+</CardGroup>
+
+## Content Types
+
+Streaming works with all content types:
+
+<Tabs>
+  <Tab title="Text">
+    ```typescript
+    server.addTool({
+      name: "streamText",
+      description: "Stream text content",
+      annotations: { streamingHint: true },
+      execute: async (args, { streamContent }) => {
+        await streamContent({
+          type: "text",
+          text: "First chunk\n",
+        });
+
+        await streamContent({
+          type: "text",
+          text: "Second chunk\n",
+        });
+
+        return "Final chunk";
+      },
+    });
+    ```
+  </Tab>
+
+  <Tab title="Images">
+    ```typescript
+    import { imageContent } from "fastmcp";
+
+    server.addTool({
+      name: "streamImages",
+      description: "Stream image content",
+      annotations: { streamingHint: true },
+      execute: async (args, { streamContent }) => {
+        // Stream first image
+        await streamContent(
+          await imageContent({
+            url: "https://example.com/image1.png",
+          })
+        );
+
+        // Stream second image
+        await streamContent(
+          await imageContent({
+            url: "https://example.com/image2.png",
+          })
+        );
+      },
+    });
+    ```
+  </Tab>
+
+  <Tab title="Mixed Content">
+    ```typescript
+    server.addTool({
+      name: "streamMixed",
+      description: "Stream mixed content types",
+      annotations: { streamingHint: true },
+      execute: async (args, { streamContent }) => {
+        // Text
+        await streamContent({
+          type: "text",
+          text: "Processing...\n",
+        });
+
+        // Image
+        await streamContent(
+          await imageContent({
+            url: "https://example.com/result.png",
+          })
+        );
+
+        // More text
+        await streamContent({
+          type: "text",
+          text: "Done!",
+        });
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+## Progress Reporting
+
+Tools can report numeric progress using `reportProgress` in the context object:
+
+```typescript
+server.addTool({
+  name: "download",
+  description: "Download a file",
+  parameters: z.object({
+    url: z.string(),
+  }),
+  execute: async (args, { reportProgress }) => {
+    await reportProgress({
+      progress: 0,
+      total: 100,
+    });
+
+    // Simulate download progress
+    for (let i = 0; i <= 100; i += 10) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      await reportProgress({
+        progress: i,
+        total: 100,
+      });
+    }
+
+    return "Download complete";
+  },
+});
+```
+
+## Combining Streaming and Progress
+
+You can use both streaming content and progress reporting together:
+
+```typescript
+server.addTool({
+  name: "processData",
+  description: "Process data with streaming updates",
+  parameters: z.object({
+    datasetSize: z.number(),
+  }),
+  annotations: {
+    streamingHint: true,
+  },
+  execute: async (args, { streamContent, reportProgress }) => {
+    const total = args.datasetSize;
+
+    for (let i = 0; i < total; i++) {
+      // Report numeric progress
+      await reportProgress({ progress: i, total });
+
+      // Stream intermediate results
+      if (i % 10 === 0) {
+        await streamContent({
+          type: "text",
+          text: `Processed ${i} of ${total} items...\n`,
+        });
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+
+    return "Processing complete!";
+  },
+});
+```
+
+## Real-World Examples
+
+### AI Text Generation
+
+```typescript
+server.addTool({
+  name: "generateStory",
+  description: "Generate a story with streaming output",
+  parameters: z.object({
+    prompt: z.string(),
+  }),
+  annotations: {
+    streamingHint: true,
+    readOnlyHint: true,
+  },
+  execute: async ({ prompt }, { streamContent, reportProgress }) => {
+    await streamContent({
+      type: "text",
+      text: `# Generating story from: "${prompt}"\n\n`,
+    });
+
+    // Simulate AI streaming (in reality, you'd call an AI API)
+    const paragraphs = [
+      "Once upon a time, in a land far away...",
+      "The hero embarked on an epic journey...",
+      "Through trials and tribulations...",
+      "Finally, peace was restored to the kingdom.",
+    ];
+
+    for (let i = 0; i < paragraphs.length; i++) {
+      await reportProgress({
+        progress: i + 1,
+        total: paragraphs.length,
+      });
+
+      await streamContent({
+        type: "text",
+        text: paragraphs[i] + "\n\n",
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+
+    return "--- The End ---";
+  },
+});
+```
+
+### File Processing
+
+```typescript
+server.addTool({
+  name: "processFiles",
+  description: "Process multiple files with progress",
+  parameters: z.object({
+    files: z.array(z.string()),
+  }),
+  annotations: {
+    streamingHint: true,
+  },
+  execute: async ({ files }, { streamContent, reportProgress }) => {
+    await streamContent({
+      type: "text",
+      text: `Processing ${files.length} files...\n\n`,
+    });
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      await reportProgress({
+        progress: i,
+        total: files.length,
+      });
+
+      await streamContent({
+        type: "text",
+        text: `[${i + 1}/${files.length}] Processing ${file}...\n`,
+      });
+
+      // Process file (simulated)
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      await streamContent({
+        type: "text",
+        text: `✓ ${file} processed\n`,
+      });
+    }
+
+    await reportProgress({
+      progress: files.length,
+      total: files.length,
+    });
+
+    return "\nAll files processed successfully!";
+  },
+});
+```
+
+### Data Analysis
+
+```typescript
+server.addTool({
+  name: "analyzeData",
+  description: "Analyze dataset with incremental results",
+  parameters: z.object({
+    dataset: z.string(),
+  }),
+  annotations: {
+    streamingHint: true,
+    readOnlyHint: true,
+  },
+  execute: async ({ dataset }, { streamContent, reportProgress }) => {
+    const steps = [
+      { name: "Loading data", duration: 1000 },
+      { name: "Cleaning data", duration: 800 },
+      { name: "Analyzing patterns", duration: 1200 },
+      { name: "Generating insights", duration: 1000 },
+      { name: "Creating visualizations", duration: 900 },
+    ];
+
+    await streamContent({
+      type: "text",
+      text: `# Data Analysis: ${dataset}\n\n`,
+    });
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+
+      await reportProgress({
+        progress: i,
+        total: steps.length,
+      });
+
+      await streamContent({
+        type: "text",
+        text: `⏳ ${step.name}...\n`,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, step.duration));
+
+      await streamContent({
+        type: "text",
+        text: `✓ ${step.name} complete\n\n`,
+      });
+    }
+
+    await reportProgress({
+      progress: steps.length,
+      total: steps.length,
+    });
+
+    return "## Analysis Complete\n\nKey insights:\n- Finding 1\n- Finding 2\n- Finding 3";
+  },
+});
+```
+
+## Tool Annotations
+
+When using streaming, set appropriate annotations:
+
+```typescript
+server.addTool({
+  name: "streamingTool",
+  description: "A tool that streams content",
+  annotations: {
+    streamingHint: true,      // Indicates streaming support
+    readOnlyHint: true,       // Tool doesn't modify environment
+    openWorldHint: true,      // Tool may interact with external entities
+  },
+  execute: async (args, { streamContent }) => {
+    // Implementation
+  },
+});
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Use streamingHint Annotation">
+    Always set `streamingHint: true` when using `streamContent` to inform clients about streaming support:
+    ```typescript
+    annotations: {
+      streamingHint: true,
+    }
+    ```
+  </Step>
+
+  <Step title="Provide Immediate Feedback">
+    Stream the first chunk quickly to show users the tool is working:
+    ```typescript
+    await streamContent({ type: "text", text: "Starting...\n" });
+    ```
+  </Step>
+
+  <Step title="Update Progress Regularly">
+    Report progress at meaningful intervals (e.g., every 10%):
+    ```typescript
+    if (i % 10 === 0) {
+      await reportProgress({ progress: i, total });
+    }
+    ```
+  </Step>
+
+  <Step title="Handle Errors Gracefully">
+    If streaming fails, users still see what was generated:
+    ```typescript
+    try {
+      await streamContent({ type: "text", text: chunk });
+    } catch (error) {
+      // Handle error, possibly by streaming error message
+      await streamContent({ type: "text", text: "Error: " + error.message });
+      throw error;
+    }
+    ```
+  </Step>
+
+  <Step title="Return vs Stream Final Content">
+    You can either return final content (appended) or stream everything:
+    ```typescript
+    // Option 1: Stream everything, return void
+    await streamContent({ type: "text", text: "Done!" });
+    return;
+
+    // Option 2: Stream partial, return final
+    await streamContent({ type: "text", text: "Processing..." });
+    return "Complete!";
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Logging" icon="file-lines" href="/features/logging">
+    Learn how to add custom logging to your tools
+  </Card>
+  <Card title="Authentication" icon="shield-halved" href="/features/authentication">
+    Secure your streaming tools with authentication
+  </Card>
+</CardGroup>

@@ -1,0 +1,204 @@
+---
+title: fastmcp inspect
+description: Debug MCP servers with the visual MCP Inspector interface
+---
+
+The `fastmcp inspect` command launches the MCP Inspector, a visual debugging tool that provides a web-based interface for testing and debugging your MCP server.
+
+## Command Syntax
+
+```bash
+npx fastmcp inspect <file>
+```
+
+### Arguments
+
+- `<file>` - **Required**. Path to your server file (TypeScript or JavaScript)
+
+## Basic Usage
+
+Launch the inspector for your server:
+
+```bash
+npx fastmcp inspect src/server.ts
+```
+
+This command:
+1. Starts your MCP server
+2. Launches the MCP Inspector web interface
+3. Automatically opens your browser to the inspector UI
+4. Connects the inspector to your running server
+
+## What is MCP Inspector?
+
+MCP Inspector ([@modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector)) is an official visual debugging tool from the Model Context Protocol team. It provides:
+
+- **Interactive Tool Testing** - Execute tools with a visual form interface
+- **Resource Browser** - Browse and preview resources with syntax highlighting
+- **Prompt Testing** - Test prompts and view generated content
+- **Real-time Logs** - Monitor server logs and events
+- **Request/Response Viewer** - Inspect MCP protocol messages
+- **Schema Validation** - Verify tool parameters and responses
+
+## Examples
+
+<CodeGroup>
+
+```bash Inspect Server
+npx fastmcp inspect src/examples/addition.ts
+```
+
+```bash Inspect Custom Server
+npx fastmcp inspect src/my-server.ts
+```
+
+```bash From Project Root
+cd fastmcp
+npx fastmcp inspect src/examples/addition.ts
+```
+
+</CodeGroup>
+
+## Inspector Interface
+
+### Tools Tab
+
+The Tools tab allows you to:
+- View all available tools and their descriptions
+- See tool parameter schemas
+- Fill in parameters using a visual form
+- Execute tools and view results
+- Test error handling
+
+### Resources Tab
+
+The Resources tab provides:
+- List of all available resources and templates
+- Resource URI structure
+- Preview resource contents
+- Test resource templates with different arguments
+- View MIME types and metadata
+
+### Prompts Tab
+
+The Prompts tab enables:
+- Browse available prompts
+- Test prompt argument completion
+- Preview generated prompt messages
+- Inspect prompt metadata
+
+### Logs Tab
+
+The Logs tab displays:
+- Server startup logs
+- Tool execution logs
+- Error messages and stack traces
+- Protocol-level messages
+- Connection events
+
+## Transport Compatibility
+
+The inspect command works with servers using the `stdio` transport:
+
+```typescript src/server.ts
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+// Add your tools, resources, and prompts...
+
+server.start({
+  transportType: "stdio", // Compatible with inspector
+});
+```
+
+<Note>
+  For HTTP-based servers (`httpStream`, `sse`), you should run your server separately and configure the inspector to connect via HTTP instead of using the CLI command.
+</Note>
+
+## Debugging Workflow
+
+Here's a recommended workflow for debugging with the inspector:
+
+1. **Start the Inspector**
+   ```bash
+   npx fastmcp inspect src/server.ts
+   ```
+
+2. **Verify Server Connection**
+   - Check that the server appears connected in the UI
+   - Review the server name and version
+
+3. **Test Tools**
+   - Navigate to the Tools tab
+   - Select a tool to test
+   - Fill in required parameters
+   - Execute and verify the response
+
+4. **Browse Resources**
+   - Switch to the Resources tab
+   - Test resource URIs
+   - Verify resource content and MIME types
+
+5. **Monitor Logs**
+   - Keep the Logs tab open
+   - Watch for errors or warnings
+   - Verify log messages from your tools
+
+## Troubleshooting
+
+### Inspector Won't Start
+
+If the inspector fails to launch:
+
+```bash
+# Check if the server file is valid
+npx fastmcp validate src/server.ts
+
+# Try running with dev command first
+npx fastmcp dev src/server.ts --verbose
+```
+
+### Browser Doesn't Open
+
+If the browser doesn't open automatically:
+- Check the terminal for the inspector URL
+- Manually open the URL in your browser
+- Ensure no firewall is blocking the connection
+
+### Connection Issues
+
+If the inspector shows "Disconnected":
+- Verify your server is using `stdio` transport
+- Check for errors in the Logs tab
+- Restart the inspector command
+
+## Comparison with Dev Command
+
+| Feature | `fastmcp dev` | `fastmcp inspect` |
+|---------|---------------|-------------------|
+| Interface | Terminal CLI | Web Browser |
+| Tool Testing | Text-based | Visual Forms |
+| Resource Preview | Text output | Syntax Highlighting |
+| Logs | Terminal output | Dedicated tab |
+| Best For | Quick testing | In-depth debugging |
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="Dev Command" icon="terminal" href="/cli/dev">
+    Run servers with interactive CLI
+  </Card>
+  <Card title="CLI Overview" icon="list" href="/cli/overview">
+    Back to CLI overview
+  </Card>
+</CardGroup>
+
+## Learn More
+
+<Card title="MCP Inspector GitHub" icon="github" href="https://github.com/modelcontextprotocol/inspector">
+  Official MCP Inspector repository and documentation
+</Card>

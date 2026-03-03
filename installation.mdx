@@ -1,0 +1,162 @@
+---
+title: Installation
+description: Install FastMCP and set up your development environment
+---
+
+## Prerequisites
+
+Before installing FastMCP, ensure you have:
+
+- **Node.js** - Version 18 or higher recommended
+- **Package manager** - npm, yarn, or pnpm
+
+## Install FastMCP
+
+Install the `fastmcp` package using your preferred package manager:
+
+<CodeGroup>
+```bash npm
+npm install fastmcp
+```
+
+```bash yarn
+yarn add fastmcp
+```
+
+```bash pnpm
+pnpm add fastmcp
+```
+</CodeGroup>
+
+This will install FastMCP along with its core dependencies:
+
+- `@modelcontextprotocol/sdk` - The official MCP SDK
+- `zod` - For schema validation (you can also use ArkType or Valibot)
+- Additional runtime dependencies for HTTP streaming and session management
+
+## Optional dependencies
+
+Depending on your use case, you may want to install additional packages:
+
+### For OAuth/JWT authentication
+
+If you plan to use OAuth authentication with JWT token verification:
+
+<CodeGroup>
+```bash npm
+npm install jose
+```
+
+```bash yarn
+yarn add jose
+```
+
+```bash pnpm
+pnpm add jose
+```
+</CodeGroup>
+
+### For Valibot schema validation
+
+If you prefer Valibot over Zod for schema validation:
+
+<CodeGroup>
+```bash npm
+npm install valibot @valibot/to-json-schema
+```
+
+```bash yarn
+yarn add valibot @valibot/to-json-schema
+```
+
+```bash pnpm
+pnpm add valibot @valibot/to-json-schema
+```
+</CodeGroup>
+
+### For ArkType schema validation
+
+If you prefer ArkType over Zod for schema validation:
+
+<CodeGroup>
+```bash npm
+npm install arktype
+```
+
+```bash yarn
+yarn add arktype
+```
+
+```bash pnpm
+pnpm add arktype
+```
+</CodeGroup>
+
+## Verify installation
+
+Create a simple test file to verify FastMCP is installed correctly:
+
+```typescript test.ts
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "Test Server",
+  version: "1.0.0",
+});
+
+console.log("FastMCP installed successfully!");
+```
+
+Run the file:
+
+<CodeGroup>
+```bash npm
+npx tsx test.ts
+```
+
+```bash node
+node --loader tsx test.ts
+```
+</CodeGroup>
+
+If you see "FastMCP installed successfully!", you're ready to build your first MCP server.
+
+## Using the CLI
+
+FastMCP includes a CLI for testing and debugging servers:
+
+```bash
+# Test your server with interactive CLI
+npx fastmcp dev src/server.ts
+
+# Inspect your server with MCP Inspector (web UI)
+npx fastmcp inspect src/server.ts
+```
+
+The CLI supports various options:
+
+- `--transport` - Choose transport type (stdio, http-stream)
+- `--port` - Set HTTP port (default: 8080)
+- `--stateless` - Enable stateless mode for serverless deployments
+
+## Project setup
+
+For a complete boilerplate with TypeScript configuration and best practices:
+
+```bash
+git clone https://github.com/punkpeye/fastmcp-boilerplate.git my-mcp-server
+cd my-mcp-server
+npm install
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Create your first MCP server
+  </Card>
+  
+  <Card title="Core concepts" icon="book" href="/core-concepts">
+    Learn about tools, resources, and prompts
+  </Card>
+</CardGroup>

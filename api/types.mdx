@@ -1,0 +1,449 @@
+---
+title: Type Definitions
+description: Core type definitions for FastMCP
+---
+
+FastMCP exports TypeScript type definitions for tools, resources, prompts, and server configuration.
+
+## Tool Types
+
+### Tool
+
+Tool definition with execute function.
+
+```typescript
+interface Tool<T extends FastMCPSessionAuth, Params extends ToolParameters = ToolParameters> {
+  name: string;
+  description?: string;
+  parameters?: Params;
+  execute: (args: StandardSchemaV1.InferOutput<Params>, context: Context<T>) => Promise<string | Content | ContentResult | void>;
+  canAccess?: (auth: T) => boolean;
+  timeoutMs?: number;
+  annotations?: ToolAnnotations;
+  _meta?: {
+    ui?: {
+      resourceUri?: string;
+    };
+    [key: string]: unknown;
+  };
+}
+```
+
+### ToolAnnotations
+
+Tool behavior hints (MCP Specification 2025-03-26).
+
+```typescript
+interface ToolAnnotations {
+  title?: string;              // Human-readable title for UI display
+  readOnlyHint?: boolean;      // Tool does not modify environment (default: false)
+  destructiveHint?: boolean;   // Tool may perform destructive updates (default: true)
+  idempotentHint?: boolean;    // Repeated calls have no additional effect (default: false)
+  openWorldHint?: boolean;     // Tool may interact with external entities (default: true)
+}
+```
+
+## Resource Types
+
+### Resource
+
+Static resource definition.
+
+```typescript
+interface Resource<T extends FastMCPSessionAuth> {
+  uri: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  load: (auth?: T) => Promise<ResourceResult | ResourceResult[]>;
+  canAccess?: (auth: T) => boolean;
+  complete?: (name: string, value: string, auth?: T) => Promise<Completion>;
+}
+```
+
+### ResourceTemplate
+
+Dynamic resource with URI template.
+
+```typescript
+interface ResourceTemplate<
+  T extends FastMCPSessionAuth,
+  Arguments extends ResourceTemplateArgument<T>[] = ResourceTemplateArgument<T>[]
+> {
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+  arguments: Arguments;
+  load: (args: ResourceTemplateArgumentsToObject<Arguments>, auth?: T) => Promise<ResourceResult | ResourceResult[]>;
+  complete?: (name: string, value: string, auth?: T) => Promise<Completion>;
+}
+```
+
+### ResourceResult
+
+Resource content result.
+
+```typescript
+type ResourceResult =
+  | {
+      text: string;
+      mimeType?: string;
+      uri?: string;
+    }
+  | {
+      blob: string;  // Base64-encoded
+      mimeType?: string;
+      uri?: string;
+    };
+```
+
+### ResourceTemplateArgument
+
+Resource template parameter definition.
+
+```typescript
+interface ResourceTemplateArgument<T extends FastMCPSessionAuth = FastMCPSessionAuth> {
+  name: string;
+  description?: string;
+  required?: boolean;
+  complete?: ArgumentValueCompleter<T>;
+}
+```
+
+## Prompt Types
+
+### Prompt
+
+Prompt template definition.
+
+```typescript
+interface Prompt<
+  T extends FastMCPSessionAuth = FastMCPSessionAuth,
+  Arguments extends PromptArgument<T>[] = PromptArgument<T>[],
+  Args = PromptArgumentsToObject<Arguments>
+> {
+  name: string;
+  description?: string;
+  arguments?: PromptArgument<T>[];
+  load: (args: Args, auth?: T) => Promise<PromptResult>;
+  complete?: (name: string, value: string, auth?: T) => Promise<Completion>;
+}
+```
+
+### PromptArgument
+
+Prompt parameter definition.
+
+```typescript
+interface PromptArgument<T extends FastMCPSessionAuth = FastMCPSessionAuth> {
+  name: string;
+  description?: string;
+  required?: boolean;
+  enum?: string[];
+  complete?: ArgumentValueCompleter<T>;
+}
+```
+
+### PromptResult
+
+Prompt load result.
+
+```typescript
+type PromptResult = string | {
+  messages: Array<{
+    role: "user" | "assistant";
+    content: {
+      type: string;
+      text: string;
+    };
+  }>;
+};
+```
+
+## Content Types
+
+### Content
+
+Union of all content types.
+
+```typescript
+type Content = 
+  | TextContent
+  | ImageContent
+  | AudioContent
+  | ResourceContent
+  | ResourceLink;
+```
+
+### TextContent
+
+Plain text content.
+
+```typescript
+interface TextContent {
+  type: "text";
+  text: string;
+}
+```
+
+### ImageContent
+
+Image content with base64 data.
+
+```typescript
+interface ImageContent {
+  type: "image";
+  data: string;      // Base64-encoded
+  mimeType: string;  // e.g., "image/png"
+}
+```
+
+### AudioContent
+
+Audio content with base64 data.
+
+```typescript
+interface AudioContent {
+  type: "audio";
+  data: string;      // Base64-encoded
+  mimeType: string;  // e.g., "audio/mpeg"
+}
+```
+
+### ResourceContent
+
+Embedded resource reference.
+
+```typescript
+interface ResourceContent {
+  type: "resource";
+  resource: {
+    uri: string;
+    text?: string;
+    blob?: string;     // Base64-encoded
+    mimeType?: string;
+  };
+}
+```
+
+### ResourceLink
+
+Reference to external resource.
+
+```typescript
+interface ResourceLink {
+  type: "resource_link";
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+}
+```
+
+### ContentResult
+
+Tool execution result with content array.
+
+```typescript
+interface ContentResult {
+  content: Content[];
+  isError?: boolean;
+}
+```
+
+## Server Types
+
+### FastMCPSessionAuth
+
+Base type for session authentication.
+
+```typescript
+type FastMCPSessionAuth = Record<string, unknown> | undefined;
+```
+
+### Context
+
+Execution context passed to tool/resource/prompt functions.
+
+```typescript
+interface Context<T extends FastMCPSessionAuth> {
+  session: T | undefined;
+  sessionId?: string;
+  requestId?: string;
+  client: {
+    version: string;
+  };
+  log: {
+    debug: (message: string, data?: SerializableValue) => void;
+    info: (message: string, data?: SerializableValue) => void;
+    warn: (message: string, data?: SerializableValue) => void;
+    error: (message: string, data?: SerializableValue) => void;
+  };
+  reportProgress: (progress: Progress) => Promise<void>;
+  streamContent: (content: Content | Content[]) => Promise<void>;
+}
+```
+
+### Progress
+
+Progress reporting data.
+
+```typescript
+interface Progress {
+  progress: number;  // Current progress value
+  total?: number;    // Total value if known
+}
+```
+
+### Logger
+
+Logging interface.
+
+```typescript
+interface Logger {
+  debug(...args: unknown[]): void;
+  info(...args: unknown[]): void;
+  log(...args: unknown[]): void;
+  warn(...args: unknown[]): void;
+  error(...args: unknown[]): void;
+}
+```
+
+### FastMCPRequest
+
+Enhanced request object for custom routes.
+
+```typescript
+interface FastMCPRequest<T extends FastMCPSessionAuth = FastMCPSessionAuth> {
+  url: string;
+  method: string;
+  headers: http.IncomingHttpHeaders;
+  params: Record<string, string>;
+  query: Record<string, string | string[]>;
+  body?: unknown;
+  auth?: T;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+}
+```
+
+### FastMCPResponse
+
+Enhanced response object for custom routes.
+
+```typescript
+interface FastMCPResponse {
+  status(code: number): FastMCPResponse;
+  setHeader(name: string, value: string | number | string[]): FastMCPResponse;
+  json(data: unknown): void;
+  send(data: string | Buffer): void;
+  end(data?: string | Buffer): void;
+}
+```
+
+### HTTPMethod
+
+HTTP methods for custom routes.
+
+```typescript
+type HTTPMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "OPTIONS";
+```
+
+### RouteHandler
+
+Route handler function type.
+
+```typescript
+type RouteHandler<T extends FastMCPSessionAuth = FastMCPSessionAuth> = (
+  req: FastMCPRequest<T>,
+  res: FastMCPResponse,
+) => void | Promise<void>;
+```
+
+### RouteOptions
+
+Options for custom routes.
+
+```typescript
+interface RouteOptions {
+  public?: boolean;  // Bypass authentication (default: false)
+}
+```
+
+## Completion Types
+
+### Completion
+
+Completion result for argument values.
+
+```typescript
+interface Completion {
+  values: string[];        // Completion suggestions (max 100)
+  total?: number;          // Total available completions
+  hasMore?: boolean;       // More completions available
+}
+```
+
+### ArgumentValueCompleter
+
+Completion function for argument values.
+
+```typescript
+type ArgumentValueCompleter<T extends FastMCPSessionAuth = FastMCPSessionAuth> = (
+  value: string,
+  auth?: T
+) => Promise<Completion>;
+```
+
+## Error Types
+
+### UserError
+
+Error meant to be surfaced to the user.
+
+```typescript
+class UserError extends Error {
+  extras?: Record<string, unknown>;
+  
+  constructor(message: string, extras?: Record<string, unknown>);
+}
+```
+
+### UnexpectedStateError
+
+Internal error for unexpected states.
+
+```typescript
+class UnexpectedStateError extends Error {
+  extras?: Record<string, unknown>;
+  
+  constructor(message: string, extras?: Record<string, unknown>);
+}
+```
+
+## Utility Types
+
+### SerializableValue
+
+JSON-serializable value.
+
+```typescript
+type SerializableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SerializableValue[]
+  | { [key: string]: SerializableValue };
+```
+
+### ToolParameters
+
+Tool parameter schema (Standard Schema v1).
+
+```typescript
+type ToolParameters = StandardSchemaV1;
+```

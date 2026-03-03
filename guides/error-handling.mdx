@@ -1,0 +1,277 @@
+---
+title: Error handling
+description: Handle and communicate errors effectively in your FastMCP server
+---
+
+Proper error handling ensures that errors are communicated clearly to clients and users while maintaining server stability.
+
+## UserError
+
+Use `UserError` for errors that should be shown to the end user:
+
+```typescript
+import { FastMCP, UserError } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "download",
+  description: "Download a file from a URL",
+  parameters: z.object({
+    url: z.string().url(),
+  }),
+  execute: async (args) => {
+    // Check for blacklisted domains
+    if (args.url.includes("blocked-site.com")) {
+      throw new UserError("This domain is not allowed");
+    }
+
+    // Attempt download
+    try {
+      const response = await fetch(args.url);
+      if (!response.ok) {
+        throw new UserError(
+          `Failed to download: ${response.status} ${response.statusText}`
+        );
+      }
+      return await response.text();
+    } catch (error) {
+      if (error instanceof UserError) {
+        throw error; // Re-throw UserError
+      }
+      // Convert network errors to user-friendly messages
+      throw new UserError("Unable to connect to the URL. Please check the address and try again.");
+    }
+  },
+});
+```
+
+## When to use UserError
+
+Use `UserError` for:
+
+- **Validation failures** - Invalid input that passed schema validation but failed business rules
+- **Permission errors** - User lacks required permissions
+- **Resource not found** - Requested resource doesn't exist
+- **External API failures** - Third-party service errors that users need to know about
+- **Configuration errors** - Missing or invalid configuration
+
+<Warning>
+  Do not use `UserError` for programming errors (bugs) or unexpected internal errors. Let those bubble up as regular errors for proper logging and debugging.
+</Warning>
+
+## Schema validation errors
+
+FastMCP automatically handles schema validation errors. You don't need to throw `UserError` for these:
+
+```typescript
+import { z } from "zod";
+
+server.addTool({
+  name: "createUser",
+  description: "Create a new user",
+  parameters: z.object({
+    email: z.string().email("Must be a valid email address"),
+    age: z.number().min(18, "Must be at least 18 years old"),
+  }),
+  execute: async (args) => {
+    // Validation happens automatically before execute is called
+    return `Created user with email: ${args.email}`;
+  },
+});
+
+// Client receives validation errors automatically:
+// - "Must be a valid email address" if email is invalid
+// - "Must be at least 18 years old" if age < 18
+```
+
+## Error messages best practices
+
+<Steps>
+  <Step title="Be specific and actionable">
+    Tell users exactly what went wrong and what they can do to fix it.
+
+    ```typescript
+    // Bad
+    throw new UserError("Invalid input");
+
+    // Good
+    throw new UserError("File size exceeds 10MB limit. Please upload a smaller file.");
+    ```
+  </Step>
+
+  <Step title="Avoid exposing sensitive information">
+    Don't include internal paths, API keys, or system details.
+
+    ```typescript
+    // Bad
+    throw new UserError(`Database error: ${dbError.stack}`);
+
+    // Good
+    throw new UserError("Unable to save data. Please try again later.");
+    ```
+  </Step>
+
+  <Step title="Use consistent language">
+    Maintain a consistent tone and style across all error messages.
+
+    ```typescript
+    // Consistent style
+    throw new UserError("Unable to process request. The file format is not supported.");
+    throw new UserError("Unable to save changes. The session has expired.");
+    ```
+  </Step>
+</Steps>
+
+## Handling async errors
+
+Always handle promise rejections in async operations:
+
+```typescript
+server.addTool({
+  name: "fetchData",
+  description: "Fetch data from multiple sources",
+  parameters: z.object({
+    urls: z.array(z.string().url()),
+  }),
+  execute: async (args) => {
+    try {
+      const results = await Promise.all(
+        args.urls.map(async (url) => {
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch ${url}`);
+          }
+          return response.text();
+        })
+      );
+      return results.join("\n\n");
+    } catch (error) {
+      throw new UserError(
+        `Unable to fetch all URLs. ${error instanceof Error ? error.message : "Unknown error"}`
+      );
+    }
+  },
+});
+```
+
+## Logging errors
+
+Log errors for debugging while showing user-friendly messages:
+
+```typescript
+import { FastMCP, UserError } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "processData",
+  description: "Process complex data",
+  parameters: z.object({
+    data: z.string(),
+  }),
+  execute: async (args, { log }) => {
+    try {
+      // Process data
+      const result = JSON.parse(args.data);
+      return `Processed ${Object.keys(result).length} items`;
+    } catch (error) {
+      // Log detailed error for debugging
+      log.error("Failed to parse data", {
+        error: error instanceof Error ? error.message : String(error),
+        input: args.data.substring(0, 100), // Log first 100 chars
+      });
+
+      // Show user-friendly message
+      throw new UserError(
+        "Unable to process data. Please ensure the input is valid JSON."
+      );
+    }
+  },
+});
+```
+
+## Error recovery
+
+Implement retry logic for transient errors:
+
+```typescript
+async function fetchWithRetry(
+  url: string,
+  retries = 3,
+  delay = 1000
+): Promise<string> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return await response.text();
+    } catch (error) {
+      if (i === retries - 1) {
+        // Last retry failed
+        throw error;
+      }
+      // Wait before retry
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error("All retries failed");
+}
+
+server.addTool({
+  name: "fetchWithRetry",
+  description: "Fetch URL with automatic retries",
+  parameters: z.object({
+    url: z.string().url(),
+  }),
+  execute: async (args) => {
+    try {
+      return await fetchWithRetry(args.url);
+    } catch (error) {
+      throw new UserError(
+        "Unable to fetch URL after 3 attempts. The server may be unavailable."
+      );
+    }
+  },
+});
+```
+
+## Error handling in resources
+
+Handle errors in resource loading:
+
+```typescript
+server.addResource({
+  uri: "file:///data/config.json",
+  name: "Configuration",
+  mimeType: "application/json",
+  async load() {
+    try {
+      const data = await fs.readFile("/data/config.json", "utf-8");
+      return { text: data };
+    } catch (error) {
+      throw new UserError("Configuration file not found or is inaccessible.");
+    }
+  },
+});
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Logging" icon="file-lines" href="/features/logging">
+    Learn about logging errors and debugging
+  </Card>
+  <Card title="Tools" icon="wrench" href="/core/tools">
+    Back to tool documentation
+  </Card>
+</CardGroup>

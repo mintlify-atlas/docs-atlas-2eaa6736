@@ -1,0 +1,647 @@
+---
+title: Production Checklist
+description: Security, monitoring, and performance best practices for deploying FastMCP servers to production
+---
+
+Prepare your FastMCP server for production with this comprehensive checklist covering security, performance, monitoring, and reliability.
+
+## Security
+
+### HTTPS Configuration
+
+Always use HTTPS in production to encrypt traffic:
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8443,
+    sslCert: "/path/to/cert.pem",
+    sslKey: "/path/to/key.pem",
+    sslCa: "/path/to/ca.pem", // Optional: for client cert auth
+  },
+});
+```
+
+<Steps>
+  <Step title="Obtain SSL Certificates">
+    Use a trusted Certificate Authority:
+
+    <CodeGroup>
+    ```bash Let's Encrypt (Recommended)
+    # Install certbot
+    sudo apt-get install certbot
+
+    # Obtain certificate
+    sudo certbot certonly --standalone -d yourdomain.com
+
+    # Certificates will be in:
+    # /etc/letsencrypt/live/yourdomain.com/fullchain.pem
+    # /etc/letsencrypt/live/yourdomain.com/privkey.pem
+    ```
+
+    ```bash Self-Signed (Development Only)
+    # Generate self-signed certificate (NOT for production)
+    openssl req -x509 -newkey rsa:4096 \
+      -keyout key.pem \
+      -out cert.pem \
+      -days 365 \
+      -nodes \
+      -subj "/CN=yourdomain.com"
+    ```
+
+    ```bash Commercial CA
+    # Purchase from providers like:
+    # - DigiCert
+    # - GlobalSign
+    # - Sectigo
+    # Follow provider's instructions for CSR generation
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure Auto-Renewal">
+    Set up automatic certificate renewal:
+
+    ```bash
+    # Test renewal
+    sudo certbot renew --dry-run
+
+    # Add to crontab for auto-renewal
+    0 0 * * * certbot renew --quiet --post-hook "systemctl restart fastmcp"
+    ```
+  </Step>
+
+  <Step title="Use Strong TLS Settings">
+    Ensure your SSL configuration uses modern TLS:
+
+    ```typescript
+    import { readFileSync } from "fs";
+
+    server.start({
+      transportType: "httpStream",
+      httpStream: {
+        port: 8443,
+        sslCert: readFileSync("/etc/letsencrypt/live/yourdomain.com/fullchain.pem", "utf8"),
+        sslKey: readFileSync("/etc/letsencrypt/live/yourdomain.com/privkey.pem", "utf8"),
+      },
+    });
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+**Never** use self-signed certificates in production. They provide encryption but no identity verification.
+</Warning>
+
+### Authentication
+
+Implement authentication to protect your MCP server:
+
+<CodeGroup>
+```typescript OAuth 2.1 (Recommended)
+import { FastMCP, GoogleProvider, requireAuth } from "fastmcp";
+
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+  auth: new GoogleProvider({
+    baseUrl: "https://mcp.yourdomain.com",
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  }),
+});
+
+server.addTool({
+  name: "protected_tool",
+  description: "Requires authentication",
+  canAccess: requireAuth,
+  execute: async () => "Authenticated access",
+});
+```
+
+```typescript API Key Authentication
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+  authenticate: (request) => {
+    const apiKey = request.headers["x-api-key"];
+
+    // Validate against secure storage (not hardcoded!)
+    if (!apiKey || !isValidApiKey(apiKey)) {
+      throw new Response(null, {
+        status: 401,
+        statusText: "Unauthorized",
+      });
+    }
+
+    return { apiKey, userId: getUserFromApiKey(apiKey) };
+  },
+});
+
+function isValidApiKey(key: string): boolean {
+  // Check against database or secure key management system
+  return process.env.VALID_API_KEYS?.split(",").includes(key) ?? false;
+}
+```
+
+```typescript JWT Token Validation
+import { FastMCP } from "fastmcp";
+import { createVerifier } from "fast-jwt";
+
+const verify = createVerifier({
+  key: process.env.JWT_PUBLIC_KEY!,
+  algorithms: ["RS256"],
+});
+
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+  authenticate: async (request) => {
+    const authHeader = request.headers.authorization;
+
+    if (!authHeader?.startsWith("Bearer ")) {
+      throw new Response(null, {
+        status: 401,
+        statusText: "Missing or invalid authorization header",
+      });
+    }
+
+    try {
+      const token = authHeader.slice(7);
+      const payload = await verify(token);
+      return { userId: payload.sub, scope: payload.scope };
+    } catch (error) {
+      throw new Response(null, {
+        status: 401,
+        statusText: "Invalid token",
+      });
+    }
+  },
+});
+```
+</CodeGroup>
+
+### Environment Variables
+
+Never hardcode secrets:
+
+```typescript
+// ❌ Bad - hardcoded secrets
+const server = new FastMCP({
+  auth: new GoogleProvider({
+    clientId: "123456.apps.googleusercontent.com",
+    clientSecret: "GOCSPX-abc123def456",
+    baseUrl: "https://example.com",
+  }),
+});
+
+// ✅ Good - use environment variables
+const server = new FastMCP({
+  auth: new GoogleProvider({
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    baseUrl: process.env.BASE_URL!,
+  }),
+});
+```
+
+Use a `.env` file (never commit to git):
+
+```bash .env
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+BASE_URL=https://mcp.yourdomain.com
+API_KEY=your-secure-api-key
+DATABASE_URL=postgresql://user:pass@host:5432/db
+```
+
+Add to `.gitignore`:
+
+```gitignore .gitignore
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+```
+
+### Rate Limiting
+
+Protect against abuse:
+
+```typescript
+import { ratelimit } from "@hono/rate-limit";
+
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+});
+
+const app = server.getApp();
+
+// Apply rate limiting
+app.use(
+  "*",
+  ratelimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: "Too many requests, please try again later",
+  })
+);
+```
+
+## Health Checks and Monitoring
+
+### Health Check Endpoints
+
+Configure health and readiness checks:
+
+```typescript
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+  health: {
+    enabled: true,
+    path: "/health",
+    message: "healthy",
+    status: 200,
+  },
+});
+```
+
+<CodeGroup>
+```bash Basic Health Check
+curl https://mcp.yourdomain.com/health
+# Response: healthy
+```
+
+```bash Readiness Check
+curl https://mcp.yourdomain.com/ready
+# Response:
+# {
+#   "mode": "stateful",
+#   "ready": 5,
+#   "status": "ready",
+#   "total": 5
+# }
+```
+
+```bash Kubernetes Probes
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fastmcp-server
+spec:
+  containers:
+  - name: fastmcp
+    image: your-registry/fastmcp:latest
+    ports:
+    - containerPort: 8080
+    livenessProbe:
+      httpGet:
+        path: /health
+        port: 8080
+      initialDelaySeconds: 10
+      periodSeconds: 30
+    readinessProbe:
+      httpGet:
+        path: /ready
+        port: 8080
+      initialDelaySeconds: 5
+      periodSeconds: 10
+```
+</CodeGroup>
+
+### Structured Logging
+
+Implement comprehensive logging:
+
+```typescript
+import { FastMCP, Logger } from "fastmcp";
+import winston from "winston";
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || "info",
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.File({ filename: "error.log", level: "error" }),
+    new winston.transports.File({ filename: "combined.log" }),
+  ],
+});
+
+// Add console in development
+if (process.env.NODE_ENV !== "production") {
+  logger.add(new winston.transports.Console({
+    format: winston.format.simple(),
+  }));
+}
+
+class WinstonLogger implements Logger {
+  debug(...args: unknown[]): void {
+    logger.debug(args.join(" "));
+  }
+  error(...args: unknown[]): void {
+    logger.error(args.join(" "));
+  }
+  info(...args: unknown[]): void {
+    logger.info(args.join(" "));
+  }
+  log(...args: unknown[]): void {
+    logger.info(args.join(" "));
+  }
+  warn(...args: unknown[]): void {
+    logger.warn(args.join(" "));
+  }
+}
+
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+  logger: new WinstonLogger(),
+});
+```
+
+### Error Tracking
+
+Integrate with error tracking services:
+
+```typescript
+import * as Sentry from "@sentry/node";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 1.0,
+});
+
+server.addTool({
+  name: "monitored_tool",
+  description: "Tool with error tracking",
+  execute: async ({ input }) => {
+    const transaction = Sentry.startTransaction({
+      op: "tool.execute",
+      name: "monitored_tool",
+    });
+
+    try {
+      // Tool logic
+      const result = await processInput(input);
+      transaction.setStatus("ok");
+      return result;
+    } catch (error) {
+      transaction.setStatus("internal_error");
+      Sentry.captureException(error);
+      throw error;
+    } finally {
+      transaction.finish();
+    }
+  },
+});
+```
+
+## Performance Optimization
+
+### Connection Pooling
+
+Reuse database and HTTP connections:
+
+```typescript
+import { Pool } from "pg";
+
+// Create connection pool outside request handlers
+const dbPool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
+});
+
+server.addTool({
+  name: "query_database",
+  description: "Execute database query",
+  execute: async ({ query }) => {
+    const client = await dbPool.connect();
+    try {
+      const result = await client.query(query);
+      return JSON.stringify(result.rows);
+    } finally {
+      client.release();
+    }
+  },
+});
+```
+
+### Caching
+
+Implement caching for expensive operations:
+
+```typescript
+import { LRUCache } from "lru-cache";
+
+const cache = new LRUCache<string, string>({
+  max: 500,
+  ttl: 1000 * 60 * 5, // 5 minutes
+});
+
+server.addTool({
+  name: "cached_operation",
+  description: "Expensive operation with caching",
+  execute: async ({ key }) => {
+    // Check cache first
+    const cached = cache.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    // Perform expensive operation
+    const result = await expensiveOperation(key);
+
+    // Store in cache
+    cache.set(key, result);
+
+    return result;
+  },
+});
+```
+
+### Timeout Configuration
+
+Set appropriate timeouts:
+
+```typescript
+server.addTool({
+  name: "api_call",
+  description: "Call external API with timeout",
+  execute: async ({ url }) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+      });
+      return await response.text();
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new UserError("Request timeout after 5 seconds");
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
+  },
+});
+```
+
+### Ping Configuration
+
+Optimize ping behavior for your transport:
+
+```typescript
+const server = new FastMCP({
+  name: "Production Server",
+  version: "1.0.0",
+  ping: {
+    enabled: true,
+    intervalMs: 10000, // 10 seconds
+    logLevel: "debug", // Don't spam logs
+  },
+});
+```
+
+## Process Management
+
+### Using PM2
+
+Keep your server running with PM2:
+
+```bash
+# Install PM2
+npm install -g pm2
+
+# Start server
+pm2 start dist/server.js --name fastmcp-server
+
+# Configure auto-restart
+pm2 startup
+pm2 save
+
+# Monitor
+pm2 monit
+
+# View logs
+pm2 logs fastmcp-server
+```
+
+PM2 ecosystem file:
+
+```javascript ecosystem.config.js
+module.exports = {
+  apps: [{
+    name: "fastmcp-server",
+    script: "./dist/server.js",
+    instances: "max",
+    exec_mode: "cluster",
+    env: {
+      NODE_ENV: "production",
+      PORT: 8080,
+    },
+    error_file: "./logs/err.log",
+    out_file: "./logs/out.log",
+    log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+    max_memory_restart: "1G",
+  }],
+};
+```
+
+### Using systemd
+
+Create a systemd service:
+
+```ini /etc/systemd/system/fastmcp.service
+[Unit]
+Description=FastMCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=fastmcp
+WorkingDirectory=/opt/fastmcp
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# Enable and start service
+sudo systemctl enable fastmcp
+sudo systemctl start fastmcp
+
+# Check status
+sudo systemctl status fastmcp
+
+# View logs
+sudo journalctl -u fastmcp -f
+```
+
+## Production Checklist
+
+<Steps>
+  <Step title="Security">
+    - [ ] HTTPS enabled with valid SSL certificates
+    - [ ] Authentication configured (OAuth or API keys)
+    - [ ] Secrets stored in environment variables (not in code)
+    - [ ] Rate limiting implemented
+    - [ ] Input validation on all tools
+    - [ ] CORS configured appropriately
+  </Step>
+
+  <Step title="Monitoring">
+    - [ ] Health check endpoint configured
+    - [ ] Structured logging implemented
+    - [ ] Error tracking service integrated
+    - [ ] Performance metrics collected
+    - [ ] Alerts configured for critical errors
+  </Step>
+
+  <Step title="Performance">
+    - [ ] Connection pooling for databases
+    - [ ] Caching for expensive operations
+    - [ ] Appropriate timeout values set
+    - [ ] Stateless mode for serverless deployments
+    - [ ] Ping behavior optimized
+  </Step>
+
+  <Step title="Reliability">
+    - [ ] Process manager configured (PM2 or systemd)
+    - [ ] Auto-restart on failure
+    - [ ] Graceful shutdown handling
+    - [ ] Load balancing if needed
+    - [ ] Backup and disaster recovery plan
+  </Step>
+
+  <Step title="Documentation">
+    - [ ] API documentation updated
+    - [ ] Deployment runbook created
+    - [ ] Incident response plan documented
+    - [ ] Team trained on operations
+  </Step>
+</Steps>
+
+## Next Steps
+
+- [Authentication](/features/authentication) - Comprehensive authentication guide
+- [Custom Routes](/features/custom-routes) - Add REST APIs and webhooks
+- [Serverless Deployments](/deployment/serverless) - AWS Lambda, Google Cloud Functions
+- [Cloudflare Workers](/deployment/cloudflare-workers) - Edge deployment

@@ -1,0 +1,455 @@
+---
+title: Transports
+description: Configure how your MCP server communicates with clients using different transport types
+---
+
+## What are Transports?
+
+Transports define how your MCP server communicates with clients. FastMCP supports three transport types:
+
+- **stdio** - Standard input/output for local, single-client connections
+- **httpStream** - HTTP streaming for remote, multi-client connections
+- **SSE** - Server-Sent Events (automatically enabled with httpStream)
+
+Each transport has different characteristics and use cases.
+
+## stdio Transport
+
+The stdio transport uses standard input/output for communication. It's ideal for local, single-client connections.
+
+### Basic Usage
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.start({
+  transportType: "stdio",
+});
+```
+
+### When to Use stdio
+
+<CardGroup cols={2}>
+  <Card title="Use stdio when" icon="check">
+    - Running locally on the same machine as the client
+    - Integrating with IDEs and desktop applications
+    - Single client connections
+    - Simple deployment scenarios
+  </Card>
+  <Card title="Avoid stdio when" icon="xmark">
+    - Need remote access
+    - Multiple concurrent clients
+    - Web-based clients
+    - Load balancing required
+  </Card>
+</CardGroup>
+
+### Configuration
+
+```typescript
+server.start({
+  transportType: "stdio",
+});
+```
+
+No additional configuration is needed for stdio transport.
+
+## HTTP Stream Transport
+
+The HTTP streaming transport provides efficient communication over HTTP. It's ideal for remote, multi-client scenarios.
+
+### Basic Usage
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+  },
+});
+```
+
+This starts the server on `http://localhost:8080/mcp` for HTTP streaming and `http://localhost:8080/sse` for SSE.
+
+### Configuration Options
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+    endpoint: "/mcp",      // Custom endpoint (default: "/mcp")
+    stateless: false,      // Enable stateless mode
+  },
+});
+```
+
+### When to Use HTTP Stream
+
+<CardGroup cols={2}>
+  <Card title="Use httpStream when" icon="check">
+    - Remote access needed
+    - Multiple concurrent clients
+    - Web-based applications
+    - Load balancing required
+    - Cloud deployment
+  </Card>
+  <Card title="Consider alternatives when" icon="lightbulb">
+    - Local-only access needed
+    - Single client scenario
+    - Maximum simplicity desired
+  </Card>
+</CardGroup>
+
+### Client Connection
+
+Connect from a client using the HTTP streaming transport:
+
+```typescript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
+const client = new Client(
+  {
+    name: "example-client",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {},
+  }
+);
+
+const transport = new StreamableHTTPClientTransport(
+  new URL("http://localhost:8080/mcp")
+);
+
+await client.connect(transport);
+```
+
+## SSE Transport
+
+Server-Sent Events are automatically enabled when using HTTP Stream transport.
+
+### SSE Endpoint
+
+When you start an HTTP Stream server, SSE is available at `/sse`:
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+  },
+});
+// SSE available at http://localhost:8080/sse
+```
+
+### Client Connection
+
+Connect using SSE from a client:
+
+```typescript
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+
+const client = new Client(
+  {
+    name: "example-client",
+    version: "1.0.0",
+  },
+  {
+    capabilities: {},
+  }
+);
+
+const transport = new SSEClientTransport(
+  new URL("http://localhost:8080/sse")
+);
+
+await client.connect(transport);
+```
+
+## HTTPS Support
+
+Secure your HTTP transport with SSL/TLS:
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8443,
+    sslCert: "./path/to/cert.pem",
+    sslKey: "./path/to/key.pem",
+    sslCa: "./path/to/ca.pem", // Optional: for client certificate authentication
+  },
+});
+```
+
+### SSL Options
+
+| Option | Description |
+|:-------|:------------|
+| `sslCert` | Path to SSL certificate file |
+| `sslKey` | Path to SSL private key file |
+| `sslCa` | (Optional) Path to CA certificate for mutual TLS |
+
+### Generate Test Certificates
+
+For testing, generate self-signed certificates:
+
+```bash
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"
+```
+
+<Warning>
+For production, obtain certificates from a trusted CA like Let's Encrypt.
+</Warning>
+
+## Stateless Mode
+
+Enable stateless operation for serverless deployments:
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+    stateless: true,
+  },
+});
+```
+
+### Stateless Mode Characteristics
+
+- No persistent sessions tracked
+- Each request creates a temporary session
+- Reduced memory usage
+- Better scalability
+- Perfect for serverless environments
+
+<Note>
+Stateless mode is only available with HTTP streaming transport. Features that depend on persistent sessions will not be available.
+</Note>
+
+### CLI and Environment Variables
+
+Enable stateless mode via CLI or environment:
+
+```bash
+# Via CLI argument
+npx fastmcp dev src/server.ts --transport http-stream --port 8080 --stateless true
+
+# Via environment variable
+FASTMCP_STATELESS=true npx fastmcp dev src/server.ts
+```
+
+## Transport Comparison
+
+<Tabs>
+  <Tab title="stdio">
+    **Characteristics:**
+    - Local connections only
+    - Single client
+    - No network configuration
+    - Fastest for local use
+    - IDE integration
+
+    **Best for:**
+    - Development tools
+    - Desktop applications
+    - Local automation
+    - Single-user scenarios
+  </Tab>
+  <Tab title="httpStream">
+    **Characteristics:**
+    - Remote connections
+    - Multiple concurrent clients
+    - Requires network configuration
+    - Scalable
+    - Cloud-ready
+
+    **Best for:**
+    - Web applications
+    - Multi-user services
+    - Cloud deployments
+    - Load-balanced scenarios
+  </Tab>
+  <Tab title="SSE">
+    **Characteristics:**
+    - Automatically enabled with httpStream
+    - One-way server-to-client streaming
+    - Built on HTTP
+    - Good browser support
+
+    **Best for:**
+    - Browser-based clients
+    - Real-time updates
+    - Compatibility scenarios
+  </Tab>
+</Tabs>
+
+## Edge Runtime
+
+For edge runtimes like Cloudflare Workers, use `EdgeFastMCP`:
+
+```typescript
+import { EdgeFastMCP } from "fastmcp/edge";
+import { z } from "zod";
+
+const server = new EdgeFastMCP({
+  name: "My Edge Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "greet",
+  description: "Greet someone",
+  parameters: z.object({
+    name: z.string(),
+  }),
+  execute: async ({ name }) => {
+    return `Hello, ${name}! Served from the edge.`;
+  },
+});
+
+// Export the server (required for Cloudflare Workers)
+export default server;
+```
+
+### Edge vs Standard FastMCP
+
+| Feature | FastMCP | EdgeFastMCP |
+|:--------|:--------|:------------|
+| Runtime | Node.js | Edge (V8 isolates) |
+| Start method | `server.start()` | `export default server` |
+| Transport | stdio, httpStream, SSE | HTTP Streamable only |
+| Sessions | Stateful or stateless | Stateless only |
+| File system | Yes | No |
+
+## Complete Examples
+
+### stdio Example
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "Local Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "add",
+  description: "Add two numbers",
+  parameters: z.object({
+    a: z.number(),
+    b: z.number(),
+  }),
+  execute: async (args) => {
+    return String(args.a + args.b);
+  },
+});
+
+server.start({
+  transportType: "stdio",
+});
+```
+
+### HTTP Stream Example
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "Remote Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "greet",
+  description: "Greet someone",
+  parameters: z.object({
+    name: z.string(),
+  }),
+  execute: async (args) => {
+    return `Hello, ${args.name}!`;
+  },
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+  },
+});
+
+console.log("Server running at:");
+console.log("- HTTP Stream: http://localhost:8080/mcp");
+console.log("- SSE: http://localhost:8080/sse");
+```
+
+### HTTPS Example
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "Secure Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "secureGreet",
+  description: "Secure greeting",
+  parameters: z.object({
+    name: z.string(),
+  }),
+  execute: async (args) => {
+    return `Hello, ${args.name}! (via HTTPS)`;
+  },
+});
+
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8443,
+    sslCert: "./cert.pem",
+    sslKey: "./key.pem",
+  },
+});
+
+console.log("Secure server running at https://localhost:8443/mcp");
+```
+
+## API Reference
+
+### StartOptions Type
+
+```typescript
+type StartOptions = {
+  transportType: "stdio" | "httpStream";
+  httpStream?: {
+    port: number;
+    endpoint?: string;
+    stateless?: boolean;
+    sslCert?: string;
+    sslKey?: string;
+    sslCa?: string;
+  };
+};
+```

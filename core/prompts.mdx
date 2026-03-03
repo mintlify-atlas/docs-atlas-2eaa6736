@@ -1,0 +1,486 @@
+---
+title: Prompts
+description: Define reusable prompt templates and workflows that clients can surface to users and LLMs
+---
+
+## What are Prompts?
+
+Prompts in MCP enable servers to define reusable prompt templates and workflows that clients can easily surface to users and LLMs. They provide a powerful way to standardize and share common LLM interactions.
+
+Prompts are pre-written templates that can include:
+- Instructions for specific tasks
+- Context for the LLM
+- Structured workflows
+- Dynamic content based on arguments
+
+## Basic Usage
+
+Add a prompt to your server using the `addPrompt` method:
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addPrompt({
+  name: "git-commit",
+  description: "Generate a Git commit message",
+  arguments: [
+    {
+      name: "changes",
+      description: "Git diff or description of changes",
+      required: true,
+    },
+  ],
+  load: async (args) => {
+    return `Generate a concise but descriptive commit message for these changes:\n\n${args.changes}`;
+  },
+});
+```
+
+## Prompt Arguments
+
+Define arguments that customize the prompt:
+
+### Required Arguments
+
+```typescript
+server.addPrompt({
+  name: "code-review",
+  description: "Generate a code review",
+  arguments: [
+    {
+      name: "code",
+      description: "Code to review",
+      required: true,
+    },
+    {
+      name: "language",
+      description: "Programming language",
+      required: true,
+    },
+  ],
+  load: async (args) => {
+    return `Review this ${args.language} code:\n\n${args.code}`;
+  },
+});
+```
+
+### Optional Arguments
+
+```typescript
+server.addPrompt({
+  name: "explain-code",
+  description: "Explain code with optional detail level",
+  arguments: [
+    {
+      name: "code",
+      description: "Code to explain",
+      required: true,
+    },
+    {
+      name: "detail",
+      description: "Level of detail (basic, intermediate, advanced)",
+      required: false,
+    },
+  ],
+  load: async (args) => {
+    const level = args.detail || "intermediate";
+    return `Explain this code at a ${level} level:\n\n${args.code}`;
+  },
+});
+```
+
+## Return Formats
+
+### Simple String
+
+Return a plain string for simple prompts:
+
+```typescript
+server.addPrompt({
+  name: "summarize",
+  description: "Summarize text",
+  arguments: [
+    {
+      name: "text",
+      description: "Text to summarize",
+      required: true,
+    },
+  ],
+  load: async (args) => {
+    return `Summarize the following text:\n\n${args.text}`;
+  },
+});
+```
+
+### Message Format
+
+Return a structured message format for more control:
+
+```typescript
+server.addPrompt({
+  name: "chat-assistant",
+  description: "Start a chat with context",
+  arguments: [
+    {
+      name: "context",
+      description: "Context for the conversation",
+      required: true,
+    },
+  ],
+  load: async (args) => {
+    return {
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: `You are a helpful assistant. Context: ${args.context}`,
+          },
+        },
+      ],
+    };
+  },
+});
+```
+
+## Argument Auto-completion
+
+Provide auto-completion suggestions for prompt arguments:
+
+### Basic Completion
+
+```typescript
+server.addPrompt({
+  name: "countryPoem",
+  description: "Writes a poem about a country",
+  arguments: [
+    {
+      name: "name",
+      description: "Name of the country",
+      required: true,
+      complete: async (value) => {
+        const countries = ["Germany", "France", "Italy", "Spain"];
+        const filtered = countries.filter(c => 
+          c.toLowerCase().startsWith(value.toLowerCase())
+        );
+        
+        return {
+          values: filtered,
+        };
+      },
+    },
+  ],
+  load: async (args) => {
+    return `Write a beautiful poem about ${args.name}.`;
+  },
+});
+```
+
+### Using Enum for Completion
+
+For fixed sets of values, use the `enum` property:
+
+```typescript
+server.addPrompt({
+  name: "countryPoem",
+  description: "Writes a poem about a country",
+  arguments: [
+    {
+      name: "name",
+      description: "Name of the country",
+      required: true,
+      enum: ["Germany", "France", "Italy", "Spain"],
+    },
+  ],
+  load: async (args) => {
+    return `Write a beautiful poem about ${args.name}.`;
+  },
+});
+```
+
+<Note>
+When you provide an `enum` array, FastMCP automatically provides completions for the argument.
+</Note>
+
+### Advanced Completion
+
+Provide more detailed completion information:
+
+```typescript
+server.addPrompt({
+  name: "fileAnalysis",
+  description: "Analyze a file",
+  arguments: [
+    {
+      name: "filename",
+      description: "File to analyze",
+      required: true,
+      complete: async (value) => {
+        const files = await listFiles();
+        const filtered = files.filter(f => 
+          f.toLowerCase().includes(value.toLowerCase())
+        );
+        
+        return {
+          values: filtered.slice(0, 100),  // Max 100 items
+          total: filtered.length,
+          hasMore: filtered.length > 100,
+        };
+      },
+    },
+  ],
+  load: async (args) => {
+    return `Analyze the file: ${args.filename}`;
+  },
+});
+```
+
+## Authentication Context
+
+Prompts can access authentication context to personalize content:
+
+```typescript
+server.addPrompt({
+  name: "personalized-greeting",
+  description: "Generate a personalized greeting",
+  arguments: [
+    {
+      name: "style",
+      description: "Greeting style (formal, casual, friendly)",
+      required: false,
+    },
+  ],
+  load: async (args, auth) => {
+    const style = args.style || "friendly";
+    
+    if (!auth) {
+      return "Hello! I don't have access to your session information.";
+    }
+    
+    const greetings = {
+      casual: `Hey ${auth.username}! Nice to see you again.`,
+      formal: `Good day, ${auth.username}. You are logged in with ${auth.role} privileges.`,
+      friendly: `Hello ${auth.username}! You're logged in as a ${auth.role}. How can I help you today?`,
+    };
+    
+    return greetings[style] || greetings.friendly;
+  },
+});
+```
+
+## Multiple Arguments with Completion
+
+```typescript
+server.addPrompt({
+  name: "taskTemplate",
+  description: "Generate a task template",
+  arguments: [
+    {
+      name: "type",
+      description: "Task type",
+      required: true,
+      enum: ["bug", "feature", "improvement"],
+    },
+    {
+      name: "priority",
+      description: "Task priority",
+      required: true,
+      enum: ["low", "medium", "high", "critical"],
+    },
+    {
+      name: "component",
+      description: "Component name",
+      required: false,
+      complete: async (value) => {
+        const components = await getComponents();
+        return {
+          values: components.filter(c => 
+            c.startsWith(value)
+          ),
+        };
+      },
+    },
+  ],
+  load: async (args) => {
+    const component = args.component ? ` in ${args.component}` : "";
+    return `Create a ${args.priority} priority ${args.type}${component}.\n\nDescribe the issue or feature here.`;
+  },
+});
+```
+
+## Complete Examples
+
+### Code Review Prompt
+
+```typescript
+server.addPrompt({
+  name: "code-review",
+  description: "Generate a comprehensive code review",
+  arguments: [
+    {
+      name: "code",
+      description: "Code to review",
+      required: true,
+    },
+    {
+      name: "language",
+      description: "Programming language",
+      required: true,
+      enum: ["typescript", "javascript", "python", "go", "rust"],
+    },
+    {
+      name: "focus",
+      description: "Review focus area",
+      required: false,
+      enum: ["security", "performance", "readability", "all"],
+    },
+  ],
+  load: async (args) => {
+    const focus = args.focus || "all";
+    
+    return `Review this ${args.language} code with focus on ${focus}:
+
+Code:
+${args.code}
+
+Provide feedback on:
+${focus === "all" ? "- Security vulnerabilities\n- Performance issues\n- Code readability\n- Best practices" : `- ${focus.charAt(0).toUpperCase() + focus.slice(1)} aspects`}
+`;
+  },
+});
+```
+
+### Documentation Generator
+
+```typescript
+server.addPrompt({
+  name: "generate-docs",
+  description: "Generate documentation for code",
+  arguments: [
+    {
+      name: "code",
+      description: "Code to document",
+      required: true,
+    },
+    {
+      name: "format",
+      description: "Documentation format",
+      required: false,
+      enum: ["jsdoc", "markdown", "html"],
+    },
+  ],
+  load: async (args) => {
+    const format = args.format || "jsdoc";
+    
+    return `Generate ${format} documentation for this code:
+
+${args.code}
+
+Include:
+- Description of functionality
+- Parameter descriptions
+- Return value documentation
+- Usage examples
+`;
+  },
+});
+```
+
+### Interactive Tutorial
+
+```typescript
+server.addPrompt({
+  name: "tutorial",
+  description: "Start an interactive tutorial",
+  arguments: [
+    {
+      name: "topic",
+      description: "Tutorial topic",
+      required: true,
+      complete: async (value) => {
+        const topics = [
+          "typescript-basics",
+          "react-hooks",
+          "async-await",
+          "testing",
+          "performance",
+        ];
+        return {
+          values: topics.filter(t => t.includes(value)),
+        };
+      },
+    },
+    {
+      name: "level",
+      description: "Skill level",
+      required: false,
+      enum: ["beginner", "intermediate", "advanced"],
+    },
+  ],
+  load: async (args, auth) => {
+    const level = args.level || "beginner";
+    const username = auth?.username || "learner";
+    
+    return `Welcome ${username}! Let's start a ${level} tutorial on ${args.topic}.
+
+I'll guide you through concepts step by step. Feel free to ask questions at any time.
+
+Ready to begin?`;
+  },
+});
+```
+
+## API Reference
+
+### Prompt Type
+
+```typescript
+type Prompt<T, Arguments, Args> = {
+  name: string;
+  description?: string;
+  arguments?: PromptArgument[];
+  load: (args: Args, auth?: T) => Promise<PromptResult>;
+  complete?: (name: string, value: string, auth?: T) => Promise<Completion>;
+};
+```
+
+### PromptArgument Type
+
+```typescript
+type PromptArgument<T> = {
+  name: string;
+  description?: string;
+  required?: boolean;
+  enum?: string[];
+  complete?: (value: string, auth?: T) => Promise<Completion>;
+};
+```
+
+### PromptResult Type
+
+```typescript
+type PromptResult = string | {
+  messages: Array<{
+    role: "user" | "assistant";
+    content: {
+      type: "text";
+      text: string;
+    };
+  }>;
+};
+```
+
+### Completion Type
+
+```typescript
+type Completion = {
+  values: string[];        // Max 100 items
+  total?: number;          // Total available completions
+  hasMore?: boolean;       // More completions exist
+};
+```

@@ -1,0 +1,173 @@
+---
+title: fastmcp dev
+description: Run MCP servers in development mode with interactive CLI testing
+---
+
+The `fastmcp dev` command starts your MCP server in development mode with an interactive command-line interface for testing tools, resources, and prompts.
+
+## Command Syntax
+
+```bash
+npx fastmcp dev <file> [options]
+```
+
+### Arguments
+
+- `<file>` - **Required**. Path to your server file (TypeScript or JavaScript)
+
+### Options
+
+- `--watch`, `-w` - Watch for file changes and automatically restart the server
+- `--verbose`, `-v` - Enable verbose logging for debugging
+- `--help` - Display help information
+
+## Basic Usage
+
+Run your server in development mode:
+
+```bash
+npx fastmcp dev src/server.ts
+```
+
+This launches an interactive CLI powered by [@wong2/mcp-cli](https://github.com/wong2/mcp-cli) that allows you to:
+
+- List and execute tools
+- Browse and read resources
+- Test prompts with different arguments
+- View server capabilities
+- Monitor server logs in real-time
+
+## Watch Mode
+
+Enable automatic server restarts when files change:
+
+```bash
+npx fastmcp dev src/server.ts --watch
+```
+
+This is particularly useful during development as it automatically reloads your server whenever you save changes to your code.
+
+<Note>
+  Watch mode uses `tsx --watch` under the hood, which monitors your source files and dependencies for changes.
+</Note>
+
+## Verbose Logging
+
+Enable detailed logging to troubleshoot issues:
+
+```bash
+npx fastmcp dev src/server.ts --verbose
+```
+
+Verbose mode displays:
+- The exact command being executed
+- File path being loaded
+- Watch mode status
+- Detailed error stack traces
+
+## Examples
+
+<CodeGroup>
+
+```bash Basic Development
+npx fastmcp dev src/examples/addition.ts
+```
+
+```bash Watch Mode
+npx fastmcp dev src/examples/addition.ts --watch
+```
+
+```bash Verbose + Watch
+npx fastmcp dev src/examples/addition.ts --watch --verbose
+```
+
+```bash Short Flags
+npx fastmcp dev src/server.ts -wv
+```
+
+</CodeGroup>
+
+## Transport Options
+
+The dev command works with servers using the `stdio` transport, which is the default for development:
+
+```typescript src/server.ts
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+// Add your tools, resources, and prompts...
+
+server.start({
+  transportType: "stdio", // Default transport for CLI
+});
+```
+
+<Note>
+  The dev command is designed for `stdio` transport. For testing HTTP-based transports (`httpStream`, `sse`), you should run your server directly and connect using an appropriate client.
+</Note>
+
+## Interactive CLI Features
+
+Once your server starts, the interactive CLI provides:
+
+### Tool Execution
+- List all available tools
+- Execute tools with parameters
+- View tool results in formatted output
+
+### Resource Access
+- Browse resource URIs
+- Read resource contents
+- Test resource templates with different arguments
+
+### Prompt Testing
+- List available prompts
+- Test prompts with various arguments
+- Preview generated prompt content
+
+### Server Information
+- View server name and version
+- Check enabled capabilities
+- Monitor connection status
+
+## Troubleshooting
+
+### Server Won't Start
+
+If your server fails to start, try running with verbose logging:
+
+```bash
+npx fastmcp dev src/server.ts --verbose
+```
+
+Common issues:
+- **TypeScript errors**: Fix compilation errors in your server file
+- **Missing dependencies**: Ensure all imports are installed
+- **Port conflicts**: Check if the required port is already in use (for HTTP transports)
+
+### File Not Found
+
+Ensure the path to your server file is correct:
+
+```bash
+# Relative path from current directory
+npx fastmcp dev ./src/server.ts
+
+# Absolute path
+npx fastmcp dev /path/to/project/src/server.ts
+```
+
+## Related Commands
+
+<CardGroup cols={2}>
+  <Card title="Inspect Command" icon="magnifying-glass" href="/cli/inspect">
+    Visual debugging with MCP Inspector
+  </Card>
+  <Card title="CLI Overview" icon="terminal" href="/cli/overview">
+    Back to CLI overview
+  </Card>
+</CardGroup>

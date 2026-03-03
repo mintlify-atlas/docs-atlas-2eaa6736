@@ -1,0 +1,539 @@
+---
+title: FastMCP
+description: Main FastMCP class for creating MCP servers
+---
+
+The `FastMCP` class is the core of FastMCP for Node.js environments. It provides a fluent API for building Model Context Protocol servers with tools, resources, prompts, and OAuth support.
+
+## Constructor
+
+Create a new FastMCP server instance.
+
+```typescript
+import { FastMCP } from "fastmcp";
+
+const server = new FastMCP({
+  name: "my-server",
+  version: "1.0.0",
+});
+```
+
+<ParamField path="name" type="string" required>
+  Server name identifier
+</ParamField>
+
+<ParamField path="version" type="string" required>
+  Semantic version string (e.g., "1.0.0")
+</ParamField>
+
+<ParamField path="instructions" type="string">
+  Server-level instructions or description
+</ParamField>
+
+<ParamField path="logger" type="Logger">
+  Custom logger instance (defaults to console)
+</ParamField>
+
+<ParamField path="auth" type="AuthProvider">
+  Authentication provider for OAuth flows. When provided, automatically configures authentication and OAuth endpoints.
+
+  ```typescript
+  import { FastMCP, GitHubProvider } from "fastmcp";
+
+  const server = new FastMCP({
+    name: "my-server",
+    version: "1.0.0",
+    auth: new GitHubProvider({
+      baseUrl: "http://localhost:8000",
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    }),
+  });
+  ```
+</ParamField>
+
+<ParamField path="authenticate" type="(request: IncomingMessage) => Promise<T>">
+  Custom authentication function. Takes precedence over `auth` provider if both are specified.
+</ParamField>
+
+<ParamField path="health" type="object">
+  Health check endpoint configuration (HTTP Stream transport only)
+
+  <Expandable title="properties">
+    <ParamField path="enabled" type="boolean" default="true">
+      Enable or disable health check endpoint
+    </ParamField>
+
+    <ParamField path="path" type="string" default="/health">
+      HTTP path for health check
+    </ParamField>
+
+    <ParamField path="message" type="string" default="ok">
+      Plain-text response message
+    </ParamField>
+
+    <ParamField path="status" type="number" default="200">
+      HTTP status code to return
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="oauth" type="object">
+  OAuth discovery endpoint configuration (HTTP-based transports only)
+
+  <Expandable title="properties">
+    <ParamField path="enabled" type="boolean" required>
+      Enable OAuth discovery endpoints
+    </ParamField>
+
+    <ParamField path="authorizationServer" type="object">
+      OAuth Authorization Server metadata (RFC 8414)
+
+      <Expandable title="properties">
+        <ParamField path="issuer" type="string" required>
+          Authorization server identifier URL
+        </ParamField>
+
+        <ParamField path="authorizationEndpoint" type="string" required>
+          Authorization endpoint URL
+        </ParamField>
+
+        <ParamField path="tokenEndpoint" type="string" required>
+          Token endpoint URL
+        </ParamField>
+
+        <ParamField path="responseTypesSupported" type="string[]" required>
+          Supported OAuth response types
+        </ParamField>
+
+        <ParamField path="scopesSupported" type="string[]">
+          Supported OAuth scopes
+        </ParamField>
+
+        <ParamField path="codeChallengeMethodsSupported" type="string[]">
+          Supported PKCE challenge methods
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="protectedResource" type="object">
+      OAuth Protected Resource metadata (RFC 9728)
+
+      <Expandable title="properties">
+        <ParamField path="resource" type="string" required>
+          Canonical resource identifier (typically the base URL)
+        </ParamField>
+
+        <ParamField path="authorizationServers" type="string[]" required>
+          List of authorization server issuer identifiers
+        </ParamField>
+
+        <ParamField path="scopesSupported" type="string[]">
+          Supported OAuth scopes for this resource
+        </ParamField>
+      </Expandable>
+    </ParamField>
+
+    <ParamField path="proxy" type="OAuthProxy">
+      OAuthProxy instance for automatic OAuth flow handling
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="ping" type="object">
+  Server ping configuration
+
+  <Expandable title="properties">
+    <ParamField path="enabled" type="boolean">
+      Enable ping (auto-enabled for SSE/HTTP Stream)
+    </ParamField>
+
+    <ParamField path="intervalMs" type="number" default="5000">
+      Ping interval in milliseconds
+    </ParamField>
+
+    <ParamField path="logLevel" type="LoggingLevel" default="debug">
+      Logging level for ping messages ("debug" | "info" | "warning" | "error")
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="roots" type="object">
+  Roots capability configuration
+
+  <Expandable title="properties">
+    <ParamField path="enabled" type="boolean" default="true">
+      Enable or disable roots support
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+## Methods
+
+### addTool()
+
+Register a tool that can be called by the MCP client.
+
+```typescript
+server.addTool({
+  name: "get_weather",
+  description: "Get current weather for a location",
+  parameters: z.object({
+    location: z.string(),
+  }),
+  execute: async ({ location }) => {
+    return `Weather in ${location}: Sunny, 72°F`;
+  },
+});
+```
+
+<ParamField path="tool" type="Tool" required>
+  Tool configuration object
+
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Unique tool identifier
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Human-readable tool description
+    </ParamField>
+
+    <ParamField path="parameters" type="StandardSchemaV1">
+      Parameter schema (Zod, ArkType, Valibot, etc.)
+    </ParamField>
+
+    <ParamField path="execute" type="(args, context) => Promise<string | Content | ContentResult>" required>
+      Tool execution function. Returns text, Content, or ContentResult.
+    </ParamField>
+
+    <ParamField path="canAccess" type="(auth) => boolean">
+      Authorization check function
+    </ParamField>
+
+    <ParamField path="timeoutMs" type="number">
+      Tool execution timeout in milliseconds
+    </ParamField>
+
+    <ParamField path="annotations" type="ToolAnnotations">
+      Tool behavior hints (readOnlyHint, destructiveHint, etc.)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### addResource()
+
+Register a static resource that can be read by the MCP client.
+
+```typescript
+server.addResource({
+  uri: "file:///config.json",
+  name: "Configuration",
+  description: "Server configuration",
+  mimeType: "application/json",
+  load: async () => ({
+    text: JSON.stringify({ version: "1.0.0" }),
+  }),
+});
+```
+
+<ParamField path="resource" type="Resource" required>
+  Resource configuration object
+
+  <Expandable title="properties">
+    <ParamField path="uri" type="string" required>
+      Unique resource identifier (URI)
+    </ParamField>
+
+    <ParamField path="name" type="string" required>
+      Resource display name
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Human-readable resource description
+    </ParamField>
+
+    <ParamField path="mimeType" type="string">
+      MIME type of the resource content
+    </ParamField>
+
+    <ParamField path="load" type="(auth?) => Promise<ResourceResult | ResourceResult[]>" required>
+      Function that loads and returns resource content
+    </ParamField>
+
+    <ParamField path="canAccess" type="(auth) => boolean">
+      Authorization check function
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### addResourceTemplate()
+
+Register a dynamic resource template with URI parameters.
+
+```typescript
+server.addResourceTemplate({
+  uriTemplate: "file:///{path}",
+  name: "File",
+  description: "Read a file",
+  mimeType: "text/plain",
+  arguments: [
+    { name: "path", description: "File path", required: true },
+  ],
+  load: async ({ path }) => ({
+    text: await readFile(path, "utf-8"),
+  }),
+});
+```
+
+<ParamField path="template" type="ResourceTemplate" required>
+  Resource template configuration
+
+  <Expandable title="properties">
+    <ParamField path="uriTemplate" type="string" required>
+      URI template with parameters (RFC 6570)
+    </ParamField>
+
+    <ParamField path="name" type="string" required>
+      Template display name
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Human-readable template description
+    </ParamField>
+
+    <ParamField path="mimeType" type="string">
+      MIME type of the resource content
+    </ParamField>
+
+    <ParamField path="arguments" type="ResourceTemplateArgument[]" required>
+      Template parameter definitions
+    </ParamField>
+
+    <ParamField path="load" type="(args, auth?) => Promise<ResourceResult | ResourceResult[]>" required>
+      Function that loads resource with resolved parameters
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### addPrompt()
+
+Register a prompt template.
+
+```typescript
+server.addPrompt({
+  name: "code_review",
+  description: "Review code for best practices",
+  arguments: [
+    { name: "language", description: "Programming language", required: true },
+  ],
+  load: async ({ language }) => ({
+    messages: [
+      {
+        role: "user",
+        content: { type: "text", text: `Review this ${language} code...` },
+      },
+    ],
+  }),
+});
+```
+
+<ParamField path="prompt" type="Prompt" required>
+  Prompt configuration object
+
+  <Expandable title="properties">
+    <ParamField path="name" type="string" required>
+      Unique prompt identifier
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Human-readable prompt description
+    </ParamField>
+
+    <ParamField path="arguments" type="PromptArgument[]">
+      Prompt argument definitions
+    </ParamField>
+
+    <ParamField path="load" type="(args, auth?) => Promise<PromptResult>" required>
+      Function that generates prompt messages
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### addRoute()
+
+Register a custom HTTP route (HTTP Stream transport only).
+
+```typescript
+server.addRoute("GET", "/api/status", async (req, res) => {
+  res.json({ status: "running", uptime: process.uptime() });
+});
+```
+
+<ParamField path="method" type="HTTPMethod" required>
+  HTTP method: "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"
+</ParamField>
+
+<ParamField path="path" type="string" required>
+  URL path for the route
+</ParamField>
+
+<ParamField path="handler" type="RouteHandler" required>
+  Request handler function
+
+  ```typescript
+  (req: FastMCPRequest, res: FastMCPResponse) => Promise<void> | void
+  ```
+</ParamField>
+
+<ParamField path="options" type="RouteOptions">
+  Route configuration options
+
+  <Expandable title="properties">
+    <ParamField path="public" type="boolean" default="false">
+      Bypass authentication for this route
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### start()
+
+Start the MCP server with the specified transport.
+
+```typescript
+// stdio transport (default)
+await server.start();
+
+// HTTP Stream transport
+await server.start({
+  transportType: "httpStream",
+  port: 8000,
+});
+```
+
+<ParamField path="options" type="object">
+  Transport configuration
+
+  <Expandable title="properties">
+    <ParamField path="transportType" type="'stdio' | 'httpStream'" default="stdio">
+      Transport protocol to use
+    </ParamField>
+
+    <ParamField path="port" type="number" default="8000">
+      Port number (httpStream only)
+    </ParamField>
+
+    <ParamField path="host" type="string" default="0.0.0.0">
+      Host address (httpStream only)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="server" type="SSEServer">
+  Server instance with `close()` method (httpStream only)
+</ResponseField>
+
+### embedded()
+
+Create an embedded MCP server instance for programmatic use.
+
+```typescript
+const embedded = await server.embedded({
+  sessionAuth: { userId: "123", role: "admin" },
+});
+
+const result = await embedded.callTool("get_weather", {
+  location: "San Francisco",
+});
+```
+
+<ParamField path="options" type="object">
+  <Expandable title="properties">
+    <ParamField path="sessionAuth" type="T">
+      Authentication context for the session
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="session" type="FastMCPSession">
+  Embedded session instance with direct API access
+</ResponseField>
+
+## Context Object
+
+The `context` object is passed to tool execute functions and provides access to session information and client capabilities.
+
+```typescript
+execute: async (args, context) => {
+  context.log.info("Tool called", { args });
+  await context.reportProgress({ progress: 50, total: 100 });
+  await context.streamContent({ type: "text", text: "Processing..." });
+  return "Done";
+}
+```
+
+<ResponseField name="session" type="T | undefined">
+  Authentication session data (if authenticated)
+</ResponseField>
+
+<ResponseField name="sessionId" type="string | undefined">
+  Session ID from Mcp-Session-Id header (HTTP transports only)
+</ResponseField>
+
+<ResponseField name="requestId" type="string | undefined">
+  Request ID from current MCP request
+</ResponseField>
+
+<ResponseField name="client" type="object">
+  Client information
+
+  <Expandable title="properties">
+    <ResponseField name="version" type="string">
+      Client version string
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="log" type="object">
+  Logging functions
+
+  <Expandable title="methods">
+    <ResponseField name="debug" type="(message: string, data?: SerializableValue) => void">
+      Log debug message
+    </ResponseField>
+
+    <ResponseField name="info" type="(message: string, data?: SerializableValue) => void">
+      Log info message
+    </ResponseField>
+
+    <ResponseField name="warn" type="(message: string, data?: SerializableValue) => void">
+      Log warning message
+    </ResponseField>
+
+    <ResponseField name="error" type="(message: string, data?: SerializableValue) => void">
+      Log error message
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="reportProgress" type="(progress: Progress) => Promise<void>">
+  Report tool execution progress
+
+  ```typescript
+  await context.reportProgress({
+    progress: 50,
+    total: 100,
+  });
+  ```
+</ResponseField>
+
+<ResponseField name="streamContent" type="(content: Content | Content[]) => Promise<void>">
+  Stream content to the client (for streaming tools)
+
+  ```typescript
+  await context.streamContent({
+    type: "text",
+    text: "Partial result...",
+  });
+  ```
+</ResponseField>

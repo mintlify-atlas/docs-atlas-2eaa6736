@@ -1,0 +1,107 @@
+---
+title: Introduction
+description: Build powerful MCP servers with FastMCP, a TypeScript framework that eliminates boilerplate and lets you focus on functionality
+---
+
+FastMCP is a TypeScript framework for building [Model Context Protocol (MCP)](https://modelcontextprotocol.io) servers capable of handling client sessions. Built on top of the official MCP SDK, FastMCP eliminates complexity by providing an opinionated framework with simple, intuitive APIs.
+
+## Why FastMCP?
+
+The official MCP SDK provides foundational blocks for building servers, but leaves many implementation details to you:
+
+- Initiating and configuring all server components
+- Handling connections and sessions
+- Managing tools, resources, and prompts
+- Processing responses and errors
+- Embedding resources, images, and audio content
+
+FastMCP eliminates this complexity by:
+
+- Handling all the boilerplate automatically
+- Providing simple, intuitive APIs for common tasks
+- Including built-in best practices and error handling
+- Letting you focus on your server's core functionality
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Simple definitions" icon="code">
+    Define tools, resources, and prompts with minimal code using intuitive APIs
+  </Card>
+  
+  <Card title="Type-safe schemas" icon="shield-check">
+    Use Zod, ArkType, or Valibot for parameter validation with full TypeScript support
+  </Card>
+  
+  <Card title="Authentication built-in" icon="lock">
+    OAuth 2.1 support with pre-configured providers for Google, GitHub, and Azure
+  </Card>
+  
+  <Card title="Session management" icon="users">
+    Track sessions with request IDs, pass headers through context, and maintain state
+  </Card>
+  
+  <Card title="Rich content support" icon="image">
+    Return text, images, audio, and embedded resources with helper functions
+  </Card>
+  
+  <Card title="Multiple transports" icon="network-wired">
+    Support for stdio, HTTP streaming, SSE, and edge runtimes like Cloudflare Workers
+  </Card>
+  
+  <Card title="Streaming output" icon="water">
+    Stream partial results and progress updates for responsive UIs
+  </Card>
+  
+  <Card title="Custom HTTP routes" icon="route">
+    Add REST APIs, webhooks, and admin interfaces alongside MCP endpoints
+  </Card>
+</CardGroup>
+
+## When to use FastMCP
+
+**Choose FastMCP when you want to:**
+- Build MCP servers quickly without dealing with low-level implementation details
+- Focus on your server's functionality rather than infrastructure
+- Use best practices and error handling out of the box
+
+**Use the official SDK when you:**
+- Need maximum control over server architecture
+- Have specific requirements that FastMCP doesn't address
+- Want to reference FastMCP's implementation to avoid common pitfalls
+
+## Get started
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install FastMCP and set up your development environment
+  </Card>
+  
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Create your first MCP server in minutes
+  </Card>
+  
+  <Card title="Core concepts" icon="book" href="/core-concepts">
+    Learn about tools, resources, and prompts
+  </Card>
+  
+  <Card title="Examples" icon="code-branch" href="https://github.com/punkpeye/fastmcp/tree/main/src/examples">
+    Explore real-world examples and patterns
+  </Card>
+</CardGroup>
+
+## Architecture overview
+
+FastMCP servers consist of three main components:
+
+1. **Tools** - Executable functions that can be invoked by clients and LLMs to perform actions
+2. **Resources** - Any kind of data you want to make available (files, images, logs, etc.)
+3. **Prompts** - Reusable prompt templates and workflows for standardized LLM interactions
+
+All components are defined with simple APIs and automatically exposed through the MCP protocol.
+
+## Community and support
+
+- [GitHub Repository](https://github.com/punkpeye/fastmcp) - Source code and issue tracking
+- [Showcase](#) - Real-world examples of FastMCP servers
+- [MCP Documentation](https://modelcontextprotocol.io) - Learn about the Model Context Protocol

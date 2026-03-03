@@ -1,80 +1,312 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Create your first FastMCP server in minutes with this step-by-step guide
 ---
 
-## Get started in three steps
+This guide will walk you through creating a simple MCP server with FastMCP. You'll learn how to define tools, run your server, and test it with the CLI.
 
-Get your documentation site running locally and make your first customization.
+## Build your first server
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Create a new file">
+    Create a new TypeScript file for your server:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```bash
+    touch server.ts
+    ```
+  </Step>
+  
+  <Step title="Import FastMCP and define your server">
+    Import FastMCP and create a new server instance:
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    ```typescript server.ts
+    import { FastMCP } from "fastmcp";
+    import { z } from "zod";
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    const server = new FastMCP({
+      name: "My First Server",
+      version: "1.0.0",
+    });
+    ```
+    
+    The server configuration accepts:
+    - `name` - Your server's name (shown to clients)
+    - `version` - Semantic version number
+    - Optional settings for authentication, logging, health checks, and more
+  </Step>
+  
+  <Step title="Add a tool">
+    Tools are executable functions that clients and LLMs can call. Let's add a simple addition tool:
+    
+    ```typescript server.ts
+    server.addTool({
+      name: "add",
+      description: "Add two numbers",
+      parameters: z.object({
+        a: z.number().describe("The first number"),
+        b: z.number().describe("The second number"),
+      }),
+      execute: async (args) => {
+        return String(args.a + args.b);
+      },
+    });
+    ```
+    
+    **What's happening here:**
+    - `name` - Unique identifier for the tool
+    - `description` - Tells LLMs when to use this tool
+    - `parameters` - Zod schema defining expected inputs (FastMCP also supports ArkType and Valibot)
+    - `execute` - Async function that performs the action and returns a string result
+  </Step>
+  
+  <Step title="Start the server">
+    Add the start command to run your server:
+    
+    ```typescript server.ts
+    server.start({
+      transportType: "stdio",
+    });
+    ```
+    
+    The `stdio` transport is perfect for local development and integrates with MCP clients like Claude Desktop.
+  </Step>
+</Steps>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+## Complete example
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+Here's the complete server code:
 
-### Step 3: Go live
+```typescript server.ts
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+const server = new FastMCP({
+  name: "My First Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "add",
+  description: "Add two numbers",
+  parameters: z.object({
+    a: z.number().describe("The first number"),
+    b: z.number().describe("The second number"),
+  }),
+  execute: async (args) => {
+    return String(args.a + args.b);
+  },
+});
+
+server.start({
+  transportType: "stdio",
+});
+```
+
+## Test your server
+
+<Tip>
+  FastMCP includes a CLI for testing servers without setting up a full MCP client.
+</Tip>
+
+Run your server with the interactive CLI:
+
+```bash
+npx fastmcp dev server.ts
+```
+
+You'll see a prompt where you can test calling your tool:
+
+```
+? What would you like to do?
+> Call a tool
+  List tools
+  Exit
+```
+
+Select "Call a tool", choose `add`, and enter parameters:
+
+```
+? Select a tool: add
+? Enter arguments (JSON): {"a": 5, "b": 3}
+
+Result: 8
+```
+
+### Use MCP Inspector
+
+For a visual debugging experience, use the MCP Inspector:
+
+```bash
+npx fastmcp inspect server.ts
+```
+
+This opens a web UI where you can:
+- Browse available tools, resources, and prompts
+- Test tool execution with a visual interface
+- Inspect request/response payloads
+- Debug errors in real-time
+
+## Add more features
+
+### Add a resource
+
+Resources make data available to clients:
+
+```typescript
+server.addResource({
+  uri: "file:///logs/app.log",
+  name: "Application Logs",
+  mimeType: "text/plain",
+  async load() {
+    return {
+      text: "Example log content",
+    };
+  },
+});
+```
+
+### Add a prompt
+
+Prompts define reusable templates for LLM interactions:
+
+```typescript
+server.addPrompt({
+  name: "git-commit",
+  description: "Generate a Git commit message",
+  arguments: [
+    {
+      name: "changes",
+      description: "Git diff or description of changes",
+      required: true,
+    },
+  ],
+  load: async (args) => {
+    return `Generate a concise but descriptive commit message for these changes:\n\n${args.changes}`;
+  },
+});
+```
+
+### Add streaming output
+
+For long-running operations, stream partial results:
+
+```typescript
+server.addTool({
+  name: "stream-poem",
+  description: "Generate a poem line by line",
+  parameters: z.object({
+    theme: z.string().describe("Theme for the poem"),
+  }),
+  annotations: {
+    streamingHint: true,
+  },
+  execute: async (args, { streamContent }) => {
+    const lines = [
+      `Poem about ${args.theme} - line 1`,
+      `Poem about ${args.theme} - line 2`,
+      `Poem about ${args.theme} - line 3`,
+    ];
+    
+    for (const line of lines) {
+      await streamContent({
+        type: "text",
+        text: line + "\n",
+      });
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  },
+});
+```
+
+## Use different schema libraries
+
+FastMCP supports multiple schema validation libraries:
+
+<CodeGroup>
+```typescript Zod
+import { z } from "zod";
+
+server.addTool({
+  name: "example",
+  description: "Example with Zod",
+  parameters: z.object({
+    name: z.string(),
+    age: z.number(),
+  }),
+  execute: async (args) => {
+    return `Hello, ${args.name}!`;
+  },
+});
+```
+
+```typescript ArkType
+import { type } from "arktype";
+
+server.addTool({
+  name: "example",
+  description: "Example with ArkType",
+  parameters: type({
+    name: "string",
+    age: "number",
+  }),
+  execute: async (args) => {
+    return `Hello, ${args.name}!`;
+  },
+});
+```
+
+```typescript Valibot
+import * as v from "valibot";
+
+server.addTool({
+  name: "example",
+  description: "Example with Valibot",
+  parameters: v.object({
+    name: v.string(),
+    age: v.number(),
+  }),
+  execute: async (args) => {
+    return `Hello, ${args.name}!`;
+  },
+});
+```
+</CodeGroup>
+
+## Deploy to production
+
+For production deployments, use HTTP streaming:
+
+```typescript
+server.start({
+  transportType: "httpStream",
+  httpStream: {
+    port: 8080,
+  },
+});
+```
+
+Your server will be available at `http://localhost:8080/mcp`.
+
+<Note>
+  FastMCP also supports edge runtimes like Cloudflare Workers. See the deployment guide for details.
+</Note>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Tools" icon="wrench" href="/tools">
+    Learn about tool parameters, error handling, and progress reporting
+  </Card>
+  
+  <Card title="Resources" icon="database" href="/resources">
+    Discover how to expose files, images, and dynamic data
+  </Card>
+  
+  <Card title="Prompts" icon="messages" href="/prompts">
+    Create reusable prompt templates with auto-completion
+  </Card>
+  
+  <Card title="Authentication" icon="lock" href="/authentication">
+    Secure your server with OAuth 2.1 or custom authentication
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

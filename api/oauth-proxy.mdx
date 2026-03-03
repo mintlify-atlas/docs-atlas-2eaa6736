@@ -1,0 +1,527 @@
+---
+title: OAuthProxy
+description: OAuth 2.1 Proxy implementation for MCP authentication
+---
+
+The `OAuthProxy` class provides a transparent OAuth 2.1 proxy that acts as an intermediary between MCP clients and upstream OAuth providers. It implements Dynamic Client Registration (DCR) and supports both token swap and pass-through patterns.
+
+## Constructor
+
+Create a new OAuthProxy instance.
+
+```typescript
+import { OAuthProxy } from "fastmcp";
+
+const proxy = new OAuthProxy({
+  baseUrl: "http://localhost:8000",
+  upstreamAuthorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+  upstreamTokenEndpoint: "https://oauth2.googleapis.com/token",
+  upstreamClientId: process.env.GOOGLE_CLIENT_ID!,
+  upstreamClientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  scopes: ["openid", "profile", "email"],
+});
+```
+
+### Configuration
+
+<ParamField path="baseUrl" type="string" required>
+  Base URL of the proxy server (e.g., "https://api.example.com")
+</ParamField>
+
+<ParamField path="upstreamAuthorizationEndpoint" type="string" required>
+  Upstream OAuth provider's authorization endpoint URL
+</ParamField>
+
+<ParamField path="upstreamTokenEndpoint" type="string" required>
+  Upstream OAuth provider's token endpoint URL
+</ParamField>
+
+<ParamField path="upstreamClientId" type="string" required>
+  Pre-registered client ID with upstream provider
+</ParamField>
+
+<ParamField path="upstreamClientSecret" type="string" required>
+  Pre-registered client secret with upstream provider
+</ParamField>
+
+<ParamField path="scopes" type="string[]">
+  OAuth scopes to request from upstream provider
+</ParamField>
+
+<ParamField path="enableTokenSwap" type="boolean" default="true">
+  Enable token swap pattern (issues short-lived JWTs instead of passing through upstream tokens)
+
+  - When `true`: Issues short-lived FastMCP JWTs and stores upstream tokens securely
+  - When `false`: Returns upstream tokens directly to clients
+</ParamField>
+
+<ParamField path="consentRequired" type="boolean" default="true">
+  Require user consent screen before authorizing
+</ParamField>
+
+<ParamField path="redirectPath" type="string" default="/oauth/callback">
+  OAuth callback path (relative to baseUrl)
+</ParamField>
+
+<ParamField path="allowedRedirectUriPatterns" type="string[]" default='["https://*", "http://localhost:*"]'>
+  Allowed redirect URI patterns for client registration (supports wildcards)
+</ParamField>
+
+<ParamField path="upstreamTokenEndpointAuthMethod" type="'client_secret_basic' | 'client_secret_post'" default="client_secret_basic">
+  Authentication method for upstream token endpoint
+
+  - `client_secret_basic`: Credentials in Authorization header (RFC 6749 Section 2.3.1)
+  - `client_secret_post`: Credentials in request body
+</ParamField>
+
+<ParamField path="accessTokenTtl" type="number" default="3600">
+  Access token TTL in seconds (for token swap mode)
+</ParamField>
+
+<ParamField path="refreshTokenTtl" type="number" default="2592000">
+  Refresh token TTL in seconds (30 days, for token swap mode)
+</ParamField>
+
+<ParamField path="authorizationCodeTtl" type="number" default="300">
+  Authorization code TTL in seconds (5 minutes)
+</ParamField>
+
+<ParamField path="transactionTtl" type="number" default="600">
+  OAuth transaction TTL in seconds (10 minutes)
+</ParamField>
+
+<ParamField path="jwtSigningKey" type="string">
+  Secret key for signing JWTs (auto-generated if not provided, required for token swap mode)
+</ParamField>
+
+<ParamField path="encryptionKey" type="string | false">
+  Encryption key for token storage (auto-generated if not provided, set to false to disable)
+</ParamField>
+
+<ParamField path="consentSigningKey" type="string">
+  Secret key for signing consent cookies (auto-generated if not provided)
+</ParamField>
+
+<ParamField path="tokenStorage" type="TokenStorage">
+  Custom token storage backend (defaults to encrypted MemoryTokenStorage)
+</ParamField>
+
+<ParamField path="customClaimsPassthrough" type="boolean | CustomClaimsPassthroughConfig" default="true">
+  Extract custom claims from upstream tokens and include them in proxy JWTs
+
+  ```typescript
+  // Enable with default settings
+  customClaimsPassthrough: true
+
+  // Fine-grained configuration
+  customClaimsPassthrough: {
+    allowedClaims: ["role", "permissions"], // Only these claims
+    blockedClaims: ["internal_id"],         // Never these claims
+    claimPrefix: "upstream_",               // Prefix to prevent collisions
+    fromAccessToken: true,                   // Extract from access token
+    fromIdToken: true,                       // Extract from ID token
+    allowComplexClaims: false,               // Only primitives
+    maxClaimValueSize: 2000,                 // Max value length
+  }
+  ```
+</ParamField>
+
+<ParamField path="forwardPkce" type="boolean" default="false">
+  Forward client's PKCE to upstream provider (experimental)
+</ParamField>
+
+## Methods
+
+### registerClient()
+
+Handle Dynamic Client Registration (RFC 7591) request.
+
+```typescript
+const registration = await proxy.registerClient({
+  redirect_uris: ["http://localhost:3000/callback"],
+  client_name: "My MCP Client",
+  grant_types: ["authorization_code", "refresh_token"],
+});
+
+console.log(registration.client_id);
+console.log(registration.client_secret);
+```
+
+<ParamField path="request" type="DCRRequest" required>
+  <Expandable title="properties">
+    <ParamField path="redirect_uris" type="string[]" required>
+      Array of allowed redirect URIs
+    </ParamField>
+
+    <ParamField path="client_name" type="string">
+      Client application name
+    </ParamField>
+
+    <ParamField path="grant_types" type="string[]">
+      Allowed grant types
+    </ParamField>
+
+    <ParamField path="scope" type="string">
+      Requested scopes (space-separated)
+    </ParamField>
+
+    <ParamField path="client_uri" type="string">
+      Client homepage URL
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="response" type="DCRResponse">
+  <Expandable title="properties">
+    <ResponseField name="client_id" type="string">
+      Generated client identifier
+    </ResponseField>
+
+    <ResponseField name="client_secret" type="string">
+      Generated client secret
+    </ResponseField>
+
+    <ResponseField name="client_id_issued_at" type="number">
+      Unix timestamp of client registration
+    </ResponseField>
+
+    <ResponseField name="client_secret_expires_at" type="number">
+      Client secret expiration (0 = never)
+    </ResponseField>
+
+    <ResponseField name="redirect_uris" type="string[]">
+      Registered redirect URIs
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### authorize()
+
+Handle OAuth authorization request.
+
+```typescript
+const response = await proxy.authorize({
+  client_id: "client-123",
+  redirect_uri: "http://localhost:3000/callback",
+  response_type: "code",
+  scope: "openid profile email",
+  state: "random-state",
+  code_challenge: "...",
+  code_challenge_method: "S256",
+});
+
+// Returns redirect to upstream provider or consent screen
+```
+
+<ParamField path="params" type="AuthorizationParams" required>
+  <Expandable title="properties">
+    <ParamField path="client_id" type="string" required>
+      Client identifier
+    </ParamField>
+
+    <ParamField path="redirect_uri" type="string" required>
+      Client callback URL
+    </ParamField>
+
+    <ParamField path="response_type" type="string" required>
+      Must be "code"
+    </ParamField>
+
+    <ParamField path="scope" type="string">
+      Space-separated scopes
+    </ParamField>
+
+    <ParamField path="state" type="string">
+      Client state parameter
+    </ParamField>
+
+    <ParamField path="code_challenge" type="string">
+      PKCE code challenge
+    </ParamField>
+
+    <ParamField path="code_challenge_method" type="string">
+      PKCE challenge method ("S256" or "plain")
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="response" type="Response">
+  HTTP redirect response (302) to upstream provider or consent screen
+</ResponseField>
+
+### handleCallback()
+
+Handle OAuth callback from upstream provider.
+
+```typescript
+const response = await proxy.handleCallback(request);
+// Returns redirect to client with authorization code
+```
+
+<ParamField path="request" type="Request" required>
+  Web API Request object with callback parameters
+</ParamField>
+
+<ResponseField name="response" type="Response">
+  HTTP redirect response (302) to client callback URL with authorization code
+</ResponseField>
+
+### handleConsent()
+
+Handle user consent form submission.
+
+```typescript
+const response = await proxy.handleConsent(request);
+// Returns redirect based on user's choice (approve/deny)
+```
+
+<ParamField path="request" type="Request" required>
+  Web API Request object with form data
+</ParamField>
+
+<ResponseField name="response" type="Response">
+  HTTP redirect response based on user action
+</ResponseField>
+
+### exchangeAuthorizationCode()
+
+Exchange authorization code for access token.
+
+```typescript
+const tokens = await proxy.exchangeAuthorizationCode({
+  grant_type: "authorization_code",
+  code: "auth-code-123",
+  client_id: "client-123",
+  redirect_uri: "http://localhost:3000/callback",
+  code_verifier: "...", // If using PKCE
+});
+
+console.log(tokens.access_token);
+console.log(tokens.refresh_token);
+```
+
+<ParamField path="request" type="TokenRequest" required>
+  <Expandable title="properties">
+    <ParamField path="grant_type" type="'authorization_code'" required>
+      Must be "authorization_code"
+    </ParamField>
+
+    <ParamField path="code" type="string" required>
+      Authorization code from authorize flow
+    </ParamField>
+
+    <ParamField path="client_id" type="string" required>
+      Client identifier
+    </ParamField>
+
+    <ParamField path="redirect_uri" type="string" required>
+      Must match authorization request
+    </ParamField>
+
+    <ParamField path="code_verifier" type="string">
+      PKCE code verifier (required if challenge was used)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="response" type="TokenResponse">
+  <Expandable title="properties">
+    <ResponseField name="access_token" type="string">
+      Access token (JWT if token swap enabled, otherwise upstream token)
+    </ResponseField>
+
+    <ResponseField name="token_type" type="string">
+      Token type ("Bearer")
+    </ResponseField>
+
+    <ResponseField name="expires_in" type="number">
+      Token lifetime in seconds
+    </ResponseField>
+
+    <ResponseField name="refresh_token" type="string">
+      Refresh token (if available)
+    </ResponseField>
+
+    <ResponseField name="scope" type="string">
+      Granted scopes (space-separated)
+    </ResponseField>
+
+    <ResponseField name="id_token" type="string">
+      ID token (if OIDC flow)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### exchangeRefreshToken()
+
+Refresh access token using refresh token.
+
+```typescript
+const tokens = await proxy.exchangeRefreshToken({
+  grant_type: "refresh_token",
+  refresh_token: "refresh-token-123",
+  client_id: "client-123",
+  scope: "openid profile", // Optional: request reduced scope
+});
+```
+
+<ParamField path="request" type="RefreshRequest" required>
+  <Expandable title="properties">
+    <ParamField path="grant_type" type="'refresh_token'" required>
+      Must be "refresh_token"
+    </ParamField>
+
+    <ParamField path="refresh_token" type="string" required>
+      Refresh token from previous token response
+    </ParamField>
+
+    <ParamField path="client_id" type="string" required>
+      Client identifier
+    </ParamField>
+
+    <ParamField path="scope" type="string">
+      Requested scope (must be subset of original)
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ResponseField name="response" type="TokenResponse">
+  New access token and optionally rotated refresh token
+</ResponseField>
+
+### loadUpstreamTokens()
+
+Load upstream tokens from a FastMCP JWT (token swap mode only).
+
+```typescript
+const upstreamTokens = await proxy.loadUpstreamTokens(fastmcpJwt);
+
+if (upstreamTokens) {
+  // Use upstream access token for API calls
+  const response = await fetch("https://api.example.com/user", {
+    headers: {
+      Authorization: `Bearer ${upstreamTokens.accessToken}`,
+    },
+  });
+}
+```
+
+<ParamField path="fastmcpToken" type="string" required>
+  FastMCP JWT access token from token swap
+</ParamField>
+
+<ResponseField name="tokens" type="UpstreamTokenSet | null">
+  Upstream token set or null if invalid/expired
+
+  <Expandable title="properties">
+    <ResponseField name="accessToken" type="string">
+      Upstream OAuth access token
+    </ResponseField>
+
+    <ResponseField name="refreshToken" type="string">
+      Upstream refresh token (if available)
+    </ResponseField>
+
+    <ResponseField name="idToken" type="string">
+      Upstream ID token (if OIDC)
+    </ResponseField>
+
+    <ResponseField name="scope" type="string[]">
+      Granted scopes
+    </ResponseField>
+
+    <ResponseField name="expiresIn" type="number">
+      Token lifetime in seconds
+    </ResponseField>
+
+    <ResponseField name="tokenType" type="string">
+      Token type ("Bearer")
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### getAuthorizationServerMetadata()
+
+Get OAuth Authorization Server metadata (RFC 8414).
+
+```typescript
+const metadata = proxy.getAuthorizationServerMetadata();
+console.log(metadata.issuer);
+console.log(metadata.authorizationEndpoint);
+console.log(metadata.tokenEndpoint);
+```
+
+<ResponseField name="metadata" type="object">
+  <Expandable title="properties">
+    <ResponseField name="issuer" type="string">
+      Authorization server identifier
+    </ResponseField>
+
+    <ResponseField name="authorizationEndpoint" type="string">
+      Authorization endpoint URL
+    </ResponseField>
+
+    <ResponseField name="tokenEndpoint" type="string">
+      Token endpoint URL
+    </ResponseField>
+
+    <ResponseField name="registrationEndpoint" type="string">
+      Dynamic client registration endpoint
+    </ResponseField>
+
+    <ResponseField name="responseTypesSupported" type="string[]">
+      Supported response types
+    </ResponseField>
+
+    <ResponseField name="grantTypesSupported" type="string[]">
+      Supported grant types
+    </ResponseField>
+
+    <ResponseField name="scopesSupported" type="string[]">
+      Available scopes
+    </ResponseField>
+
+    <ResponseField name="codeChallengeMethodsSupported" type="string[]">
+      Supported PKCE methods ("S256", "plain")
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### destroy()
+
+Stop cleanup interval and destroy resources.
+
+```typescript
+proxy.destroy();
+```
+
+## Token Swap Pattern
+
+When `enableTokenSwap: true` (default), the proxy uses a secure token swap pattern:
+
+1. **Client authorizes**: Client gets authorization code from proxy
+2. **Code exchange**: Proxy exchanges code with upstream provider
+3. **Upstream tokens stored**: Proxy securely stores upstream tokens (encrypted)
+4. **FastMCP JWTs issued**: Proxy issues short-lived JWTs to client
+5. **JWT mapping**: JWTs contain JTI that maps to upstream tokens
+6. **Token refresh**: Client refreshes FastMCP JWT, proxy refreshes upstream tokens
+
+Benefits:
+- **Security**: Upstream tokens never leave the proxy
+- **Short-lived**: Client tokens expire quickly (default 1 hour)
+- **Auditable**: All token usage tracked through proxy
+- **Claims extraction**: Custom claims from upstream tokens included in JWTs
+
+## Pass-through Pattern
+
+When `enableTokenSwap: false`, the proxy acts as a transparent pass-through:
+
+1. **Client authorizes**: Client gets authorization code from proxy
+2. **Code exchange**: Proxy exchanges code with upstream provider
+3. **Upstream tokens returned**: Proxy returns upstream tokens directly to client
+4. **Direct API access**: Client uses upstream tokens to call APIs directly
+
+Benefits:
+- **Simplicity**: No token mapping or storage
+- **Standard OAuth**: Clients use standard upstream tokens
+- **Long-lived**: Tokens live as long as upstream provider allows

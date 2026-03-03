@@ -1,0 +1,413 @@
+---
+title: Session Types
+description: Session type definitions for authentication
+---
+
+FastMCP defines session types for authentication and authorization in MCP servers.
+
+## FastMCPSession
+
+Session class representing a connected MCP client session.
+
+```typescript
+class FastMCPSession<T extends FastMCPSessionAuth = FastMCPSessionAuth> {
+  // Properties
+  readonly isReady: boolean;
+  readonly clientCapabilities: ClientCapabilities | null;
+  readonly loggingLevel: LoggingLevel;
+  readonly roots: Root[];
+  readonly server: Server;
+  sessionId?: string;
+  
+  // Methods
+  async connect(transport: Transport): Promise<void>;
+  async close(): Promise<void>;
+  async requestSampling(message, options?): Promise<SamplingResponse>;
+  waitForReady(): Promise<void>;
+  updateAuth(auth: T): void;
+  
+  // List changed notifications
+  toolsListChanged(tools: Tool<T>[]): void;
+  resourcesListChanged(resources: Resource<T>[]): void;
+  resourceTemplatesListChanged(templates: ResourceTemplate<T>[]): void;
+  promptsListChanged(prompts: Prompt<T>[]): void;
+  triggerListChangedNotification(method: string): Promise<void>;
+}
+```
+
+### Properties
+
+<ResponseField name="isReady" type="boolean">
+  Whether the session is ready (connected and initialized)
+</ResponseField>
+
+<ResponseField name="clientCapabilities" type="ClientCapabilities | null">
+  Client capabilities negotiated during initialization
+</ResponseField>
+
+<ResponseField name="loggingLevel" type="LoggingLevel">
+  Current logging level set by client
+
+  ```typescript
+  type LoggingLevel = "debug" | "info" | "notice" | "warning" | "error" | "critical" | "alert" | "emergency";
+  ```
+</ResponseField>
+
+<ResponseField name="roots" type="Root[]">
+  Root directories provided by the client
+</ResponseField>
+
+<ResponseField name="server" type="Server">
+  Underlying MCP SDK server instance
+</ResponseField>
+
+<ResponseField name="sessionId" type="string | undefined">
+  Session ID from Mcp-Session-Id header (HTTP transports only)
+</ResponseField>
+
+### Methods
+
+#### connect()
+
+Connect the session with a transport.
+
+```typescript
+const session = new FastMCPSession({
+  name: "my-server",
+  version: "1.0.0",
+  // ...
+});
+
+const transport = new StdioServerTransport();
+await session.connect(transport);
+```
+
+<ParamField path="transport" type="Transport" required>
+  MCP transport instance (StdioServerTransport, WebStreamableHTTPServerTransport, etc.)
+</ParamField>
+
+#### close()
+
+Close the session and clean up resources.
+
+```typescript
+await session.close();
+```
+
+#### requestSampling()
+
+Request LLM sampling from the client (if supported).
+
+```typescript
+const response = await session.requestSampling({
+  messages: [
+    {
+      role: "user",
+      content: { type: "text", text: "Analyze this code" },
+    },
+  ],
+  modelPreferences: {
+    hints: [{ name: "claude-3-5-sonnet" }],
+  },
+  maxTokens: 1000,
+});
+
+console.log(response.content.text);
+console.log(response.model);
+```
+
+<ParamField path="message" type="CreateMessageRequest['params']" required>
+  Sampling request parameters
+</ParamField>
+
+<ParamField path="options" type="RequestOptions">
+  Request options (timeout, etc.)
+</ParamField>
+
+<ResponseField name="response" type="SamplingResponse">
+  ```typescript
+  interface SamplingResponse {
+    content: TextContent | ImageContent | AudioContent;
+    model: string;
+    role: "assistant" | "user";
+    stopReason?: "endTurn" | "maxTokens" | "stopSequence" | string;
+  }
+  ```
+</ResponseField>
+
+#### waitForReady()
+
+Wait for session to be ready.
+
+```typescript
+await session.waitForReady();
+console.log("Session is ready");
+```
+
+#### updateAuth()
+
+Update the session's authentication context.
+
+```typescript
+const newAuth = { userId: "123", role: "admin" };
+session.updateAuth(newAuth);
+```
+
+<ParamField path="auth" type="T" required>
+  New authentication data
+</ParamField>
+
+### Events
+
+The session emits events that you can listen to:
+
+```typescript
+session.on("ready", () => {
+  console.log("Session ready");
+});
+
+session.on("error", ({ error }) => {
+  console.error("Session error:", error);
+});
+
+session.on("rootsChanged", ({ roots }) => {
+  console.log("Roots updated:", roots);
+});
+```
+
+<ResponseField name="ready" type="() => void">
+  Emitted when session is connected and ready
+</ResponseField>
+
+<ResponseField name="error" type="(event: { error: Error }) => void">
+  Emitted when an error occurs
+</ResponseField>
+
+<ResponseField name="rootsChanged" type="(event: { roots: Root[] }) => void">
+  Emitted when client roots change
+</ResponseField>
+
+## OAuthSession
+
+Standard session type for OAuth providers.
+
+```typescript
+interface OAuthSession {
+  accessToken: string;
+  scopes?: string[];
+  expiresAt?: number;
+  idToken?: string;
+  refreshToken?: string;
+  claims?: Record<string, unknown>;
+}
+```
+
+<ResponseField name="accessToken" type="string">
+  The upstream OAuth access token
+</ResponseField>
+
+<ResponseField name="scopes" type="string[]">
+  Scopes granted by the OAuth provider
+</ResponseField>
+
+<ResponseField name="expiresAt" type="number">
+  Token expiration time (Unix timestamp in seconds)
+</ResponseField>
+
+<ResponseField name="idToken" type="string">
+  ID token from OIDC providers
+</ResponseField>
+
+<ResponseField name="refreshToken" type="string">
+  Refresh token (if available)
+</ResponseField>
+
+<ResponseField name="claims" type="Record<string, unknown>">
+  Additional claims extracted from the token (if customClaimsPassthrough enabled)
+</ResponseField>
+
+### Usage
+
+```typescript
+import type { OAuthSession } from "fastmcp";
+
+server.addTool({
+  name: "get_token",
+  execute: async (args, context) => {
+    const session = context.session as OAuthSession;
+    
+    if (session) {
+      console.log("Access token:", session.accessToken);
+      console.log("Scopes:", session.scopes);
+      console.log("Expires at:", new Date(session.expiresAt! * 1000));
+    }
+    
+    return "Token info logged";
+  },
+});
+```
+
+## Provider-Specific Sessions
+
+Each OAuth provider extends `OAuthSession` with provider-specific fields.
+
+### GoogleSession
+
+```typescript
+import type { GoogleSession } from "fastmcp";
+
+interface GoogleSession extends OAuthSession {
+  email?: string;  // User's Google email
+}
+```
+
+**Usage:**
+
+```typescript
+import { getAuthSession } from "fastmcp";
+import type { GoogleSession } from "fastmcp";
+
+server.addTool({
+  name: "get_email",
+  execute: async (args, context) => {
+    const session = getAuthSession<GoogleSession>(context.session);
+    return `Email: ${session.email}`;
+  },
+});
+```
+
+### GitHubSession
+
+```typescript
+import type { GitHubSession } from "fastmcp";
+
+interface GitHubSession extends OAuthSession {
+  username?: string;  // GitHub username
+}
+```
+
+**Usage:**
+
+```typescript
+import { getAuthSession } from "fastmcp";
+import type { GitHubSession } from "fastmcp";
+
+server.addTool({
+  name: "get_repos",
+  execute: async (args, context) => {
+    const session = getAuthSession<GitHubSession>(context.session);
+    const response = await fetch(
+      `https://api.github.com/users/${session.username}/repos`,
+      {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+      },
+    );
+    const repos = await response.json();
+    return JSON.stringify(repos);
+  },
+});
+```
+
+### AzureSession
+
+```typescript
+import type { AzureSession } from "fastmcp";
+
+interface AzureSession extends OAuthSession {
+  upn?: string;  // User Principal Name
+}
+```
+
+**Usage:**
+
+```typescript
+import { getAuthSession } from "fastmcp";
+import type { AzureSession } from "fastmcp";
+
+server.addTool({
+  name: "get_profile",
+  execute: async (args, context) => {
+    const session = getAuthSession<AzureSession>(context.session);
+    return `UPN: ${session.upn}`;
+  },
+});
+```
+
+## Custom Session Types
+
+Define custom session types for your authentication:
+
+```typescript
+interface CustomSession {
+  userId: string;
+  role: "admin" | "user" | "guest";
+  permissions: string[];
+  organizationId: string;
+}
+
+const server = new FastMCP<CustomSession>({
+  name: "custom-auth-server",
+  version: "1.0.0",
+  authenticate: async (request) => {
+    const token = request.headers.authorization?.replace("Bearer ", "");
+    
+    if (!token) {
+      return undefined;
+    }
+    
+    // Validate token and return session
+    const user = await validateToken(token);
+    
+    return {
+      userId: user.id,
+      role: user.role,
+      permissions: user.permissions,
+      organizationId: user.orgId,
+    };
+  },
+});
+
+server.addTool({
+  name: "admin_action",
+  canAccess: (auth) => auth?.role === "admin",
+  execute: async (args, context) => {
+    const session = context.session!;
+    console.log(`Admin ${session.userId} in org ${session.organizationId}`);
+    return "Action completed";
+  },
+});
+```
+
+## FastMCP Events
+
+FastMCP server emits connection events:
+
+```typescript
+const server = new FastMCP({
+  name: "my-server",
+  version: "1.0.0",
+});
+
+server.on("connect", ({ session }) => {
+  console.log("Client connected");
+  console.log("Session ID:", session.sessionId);
+  console.log("Client capabilities:", session.clientCapabilities);
+});
+
+server.on("disconnect", ({ session }) => {
+  console.log("Client disconnected");
+  console.log("Session ID:", session.sessionId);
+});
+
+await server.start({ transportType: "httpStream" });
+```
+
+<ResponseField name="connect" type="(event: { session: FastMCPSession<T> }) => void">
+  Emitted when a client connects
+</ResponseField>
+
+<ResponseField name="disconnect" type="(event: { session: FastMCPSession<T> }) => void">
+  Emitted when a client disconnects
+</ResponseField>

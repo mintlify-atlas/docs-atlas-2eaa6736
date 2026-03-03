@@ -1,0 +1,241 @@
+---
+title: Schema validation
+description: Use Zod, Valibot, or ArkType for type-safe tool parameters with Standard Schema support
+---
+
+FastMCP uses the [Standard Schema](https://standardschema.dev) specification for defining tool parameters. This allows you to use your preferred schema validation library (Zod, ArkType, or Valibot) as long as it implements the spec.
+
+## Supported libraries
+
+FastMCP supports any validation library that implements the Standard Schema specification:
+
+<CardGroup cols={3}>
+  <Card title="Zod" icon="z" href="https://zod.dev">
+    Most popular TypeScript-first schema validation
+  </Card>
+  <Card title="ArkType" icon="a" href="https://arktype.io">
+    TypeScript's 1:1 validator
+  </Card>
+  <Card title="Valibot" icon="v" href="https://valibot.dev">
+    Modular and type-safe schema library
+  </Card>
+</CardGroup>
+
+## Using Zod
+
+Zod is the most popular choice and comes with excellent TypeScript support:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { z } from "zod";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "fetch-content",
+  description: "Fetch the content of a URL",
+  parameters: z.object({
+    url: z.string().url(),
+    timeout: z.number().optional().default(5000),
+    headers: z.record(z.string()).optional(),
+  }),
+  execute: async (args) => {
+    // args is fully typed: { url: string; timeout: number; headers?: Record<string, string> }
+    return `Fetching ${args.url} with timeout ${args.timeout}ms`;
+  },
+});
+```
+
+## Using ArkType
+
+ArkType provides 1:1 TypeScript syntax for runtime validation:
+
+```typescript
+import { FastMCP } from "fastmcp";
+import { type } from "arktype";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "fetch-content",
+  description: "Fetch the content of a URL",
+  parameters: type({
+    url: "string",
+    "timeout?": "number",
+    "headers?": "Record<string, string>",
+  }),
+  execute: async (args) => {
+    return `Fetching ${args.url}`;
+  },
+});
+```
+
+## Using Valibot
+
+Valibot is a modular, lightweight alternative with a functional API:
+
+<Note>
+  Valibot requires the peer dependency `@valibot/to-json-schema`.
+</Note>
+
+```bash
+npm install valibot @valibot/to-json-schema
+```
+
+```typescript
+import { FastMCP } from "fastmcp";
+import * as v from "valibot";
+
+const server = new FastMCP({
+  name: "My Server",
+  version: "1.0.0",
+});
+
+server.addTool({
+  name: "fetch-content",
+  description: "Fetch the content of a URL",
+  parameters: v.object({
+    url: v.string(),
+    timeout: v.optional(v.number()),
+    headers: v.optional(v.record(v.string(), v.string())),
+  }),
+  execute: async (args) => {
+    return `Fetching ${args.url}`;
+  },
+});
+```
+
+## Tools without parameters
+
+When creating tools that don't require parameters, you have two options:
+
+<Tabs>
+  <Tab title="Omit parameters">
+    ```typescript
+    server.addTool({
+      name: "sayHello",
+      description: "Say hello",
+      // No parameters property
+      execute: async () => {
+        return "Hello, world!";
+      },
+    });
+    ```
+  </Tab>
+  <Tab title="Empty object">
+    ```typescript
+    import { z } from "zod";
+
+    server.addTool({
+      name: "sayHello",
+      description: "Say hello",
+      parameters: z.object({}), // Empty object
+      execute: async () => {
+        return "Hello, world!";
+      },
+    });
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  Both approaches are fully compatible with all MCP clients, including Cursor. FastMCP automatically generates the proper schema in both cases.
+</Note>
+
+## Type inference
+
+All schema libraries provide automatic TypeScript type inference for the `execute` function:
+
+```typescript
+import { z } from "zod";
+
+const UserSchema = z.object({
+  name: z.string(),
+  age: z.number(),
+  email: z.string().email(),
+});
+
+server.addTool({
+  name: "createUser",
+  description: "Create a new user",
+  parameters: UserSchema,
+  execute: async (args) => {
+    // args is typed as: { name: string; age: number; email: string }
+    return `Created user: ${args.name} (${args.email}), age ${args.age}`;
+  },
+});
+```
+
+## Complex schemas
+
+You can use all features of your chosen schema library:
+
+```typescript
+import { z } from "zod";
+
+server.addTool({
+  name: "processData",
+  description: "Process complex data",
+  parameters: z.object({
+    // Enums
+    status: z.enum(["pending", "active", "completed"]),
+    
+    // Arrays
+    tags: z.array(z.string()).min(1).max(10),
+    
+    // Nested objects
+    metadata: z.object({
+      createdBy: z.string(),
+      timestamp: z.number(),
+    }),
+    
+    // Union types
+    value: z.union([z.string(), z.number()]),
+    
+    // Optional with default
+    priority: z.number().min(1).max(5).default(3),
+  }),
+  execute: async (args) => {
+    return `Processing with status: ${args.status}`;
+  },
+});
+```
+
+## Validation errors
+
+When a client passes invalid parameters, FastMCP automatically handles validation errors and returns them to the client:
+
+```typescript
+import { z } from "zod";
+
+server.addTool({
+  name: "validateEmail",
+  description: "Validate an email address",
+  parameters: z.object({
+    email: z.string().email("Invalid email format"),
+  }),
+  execute: async (args) => {
+    return `Valid email: ${args.email}`;
+  },
+});
+
+// If client passes { email: "not-an-email" }, they receive:
+// Error: Invalid email format
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Tools" icon="wrench" href="/core/tools">
+    Learn more about tool definitions
+  </Card>
+  <Card title="Error Handling" icon="triangle-exclamation" href="/guides/error-handling">
+    Handle errors in your tools
+  </Card>
+</CardGroup>
