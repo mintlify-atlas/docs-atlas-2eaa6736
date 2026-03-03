@@ -1,0 +1,163 @@
+{
+  "projectType": "framework",
+  "projectName": "FastMCP",
+  "projectDescription": "A TypeScript framework for building MCP servers with authentication, sessions, and multi-transport support.",
+  "theme": "aspen",
+  "primaryColor": "#5B7FFF",
+  "lightColor": "#7B9AFF",
+  "darkColor": "#4A66CC",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core/tools",
+              "core/resources",
+              "core/prompts",
+              "core/sessions",
+              "core/transports"
+            ]
+          },
+          {
+            "group": "Features",
+            "pages": [
+              "features/authentication",
+              "features/oauth-proxy",
+              "features/custom-routes",
+              "features/edge-runtime",
+              "features/streaming",
+              "features/logging"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/schema-validation",
+              "guides/error-handling",
+              "guides/progress-notifications",
+              "guides/embedded-resources",
+              "guides/stateless-mode",
+              "guides/https-setup"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/cloudflare-workers",
+              "deployment/serverless",
+              "deployment/production"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Classes",
+            "pages": [
+              "api/fastmcp",
+              "api/edgefastmcp"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/oauth-providers",
+              "api/oauth-proxy",
+              "api/auth-helpers"
+            ]
+          },
+          {
+            "group": "Types & Interfaces",
+            "pages": [
+              "api/types",
+              "api/content-types",
+              "api/session-types"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utilities"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "CLI",
+        "groups": [
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli/overview",
+              "cli/dev",
+              "cli/inspect"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Simple Tool, Resource, and Prompt definitions with Standard Schema support",
+    "OAuth 2.1 authentication with pre-configured providers (Google, GitHub, Azure)",
+    "Multiple transport types: stdio, HTTP streaming, SSE, and edge runtime support",
+    "Session management with session ID and request ID tracking",
+    "Custom HTTP routes for REST APIs, webhooks, and admin interfaces",
+    "Edge runtime support for Cloudflare Workers and Deno Deploy",
+    "Stateless mode for serverless deployments",
+    "Built-in OAuth proxy with Dynamic Client Registration (DCR) and PKCE",
+    "Progress notifications and streaming output",
+    "Image and audio content support",
+    "Embedded resources for simplified tool responses",
+    "CLI tools for testing (fastmcp dev) and debugging (fastmcp inspect)",
+    "HTTPS support with SSL certificate configuration",
+    "Configurable ping behavior and health-check endpoints",
+    "Typed server events and error handling"
+  ],
+  "publicApiSurface": [
+    "FastMCP",
+    "EdgeFastMCP",
+    "addTool",
+    "addResource",
+    "addResourceTemplate",
+    "addPrompt",
+    "addRoute",
+    "start",
+    "imageContent",
+    "audioContent",
+    "embedded",
+    "UserError",
+    "GoogleProvider",
+    "GitHubProvider",
+    "AzureProvider",
+    "OAuthProvider",
+    "OAuthProxy",
+    "requireAuth",
+    "requireScopes",
+    "requireRole",
+    "requireAll",
+    "requireAny",
+    "getAuthSession",
+    "DiscoveryDocumentCache",
+    "ConsentManager",
+    "JWTIssuer",
+    "JWKSVerifier",
+    "PKCEUtils",
+    "EncryptedTokenStorage",
+    "MemoryTokenStorage",
+    "DiskStore"
+  ]
+}
